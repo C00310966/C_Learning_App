@@ -1,0 +1,87 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build CodeQuest",
+      "type": "process",
+      "command": "C:/msys64/ucrt64/bin/gcc.exe",
+      "args": [
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Wpedantic",
+        "-g",
+        "-Iinclude",
+        "-I${config:codequest.raylibInclude}",
+        "src/main.c",
+        "src/ui.c",
+        "src/progress.c",
+        "src/tracks.c",
+        "src/lessons.c",
+        "src/lesson_details.c",
+        "src/tutorials.c",
+        "src/tutorials_extra.c",
+        "src/quizzes.c",
+        "src/exercises.c",
+        "-o",
+        "bin/CodeQuest.exe",
+        "-L${config:codequest.raylibLib}",
+        "-lraylib",
+        "-lopengl32",
+        "-lgdi32",
+        "-lwinmm",
+        "-lm"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "env": {
+          "PATH": "C:\\msys64\\ucrt64\\bin;${env:PATH}"
+        }
+      },
+      "problemMatcher": [
+        "$gcc"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "windows": {},
+      "dependsOn": "Create bin directory"
+    },
+    {
+      "label": "Create bin directory",
+      "type": "shell",
+      "command": "if not exist bin mkdir bin",
+      "options": {
+        "cwd": "${workspaceFolder}",
+        "shell": {
+          "executable": "cmd.exe",
+          "args": [
+            "/d",
+            "/c"
+          ]
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Build CodeQuest (macOS)",
+      "type": "shell",
+      "command": "make",
+      "group": "build",
+      "problemMatcher": [
+        "$gcc"
+      ],
+      "osx": {
+        "options": {
+          "shell": {
+            "executable": "/bin/zsh",
+            "args": [
+              "-c"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}
