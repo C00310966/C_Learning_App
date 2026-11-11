@@ -7,6 +7,7 @@
 #include "progress.h"
 #include "app.h"
 #include "lab_runner.h"
+#include "debug_challenges.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -60,6 +61,7 @@ static int labHasResult=0;
 static int quizTrack=-1, quizPosition=0, quizCount=0;
 static int quizQuestionIds[30], quizSelections[30];
 static int quizChoice=-1, quizAnswered=0, quizFinished=0;
+static int debugMode=0;
 
 static float scroll=0, maxScroll=0;
 static int windowW=1380,windowH=850;
@@ -131,7 +133,7 @@ static int totalLabs(void){int n=0;for(int i=0;i<COUNT(labTasks);i++)n+=progress
 static int totalQuizzes(void){int n=0;for(int i=0;i<COUNT(quizzes);i++)n+=progress.quizDone[i]!=0;return n;}
 static int trackLessonCount(int t){int n=0;for(int i=0;i<COUNT(lessons);i++)if(lessons[i].track==t)n++;return n;}
 static int trackDone(int t){int n=0;for(int i=0;i<COUNT(lessons);i++)if(lessons[i].track==t)n+=progress.learned[i]!=0;return n;}
-static void nav(int s){if(labLoaded>=0)labSaveDraft(labLoaded,labCode);labFocus=0;screen=s;selectedLesson=-1;selectedLab=-1;scroll=0;searchActive=0;if(s==2){quizTrack=-1;quizFinished=0;}}
+static void nav(int s){if(labLoaded>=0)labSaveDraft(labLoaded,labCode);labFocus=0;screen=s;selectedLesson=-1;selectedLab=-1;scroll=0;searchActive=0;if(s==2){quizTrack=-1;quizFinished=0;debugMode=0;}}
 static int contains(const char*s,const char*term){if(!term[0])return 1;char a[1100],b[100];snprintf(a,sizeof(a),"%s",s);snprintf(b,sizeof(b),"%s",term);for(char*p=a;*p;p++)if(*p>='A'&&*p<='Z')*p+=32;for(char*p=b;*p;p++)if(*p>='A'&&*p<='Z')*p+=32;return strstr(a,b)!=NULL;}
 static void startQuiz(int track){
  if(track<0 || track>=COUNT(tracks))return;
@@ -343,6 +345,14 @@ static void quizMenu(float x,float w,float *bottom){
  tx("Practice quizzes",x,y,30,CQ_WHITE);
  tx("Pick a quiz, work through every question, then review your score.",x,y+44,15,CQ_MUTED);
  y+=99;
+ /* Independent activity: keeps existing quizzes, scores and saved progress intact. */
+ box(x,y,w,109,.10f,PANEL);border(x,y,w,109,.10f,CQ_ORANGE);
+ tx("DEBUG THE CODE",x+20,y+15,13,CQ_ORANGE);
+ tx("Find the bug, choose the fix, and learn why it works.",x+20,y+45,15,CQ_WHITE);
+ if(btn("START CHALLENGES  >",x+w-227,y+30,209,50,CQ_ORANGE,1)){
+  debugMode=1;scroll=0;return;
+ }
+ y+=130;
  box(x,y,w,96,.10f,PANEL);
  char stats[112];
  snprintf(stats,sizeof(stats),"%d / %d questions mastered across all quizzes",totalQuizzes(),COUNT(quizzes));
@@ -434,6 +444,15 @@ static void quizSummary(float x,float w,float *bottom){
  *bottom=y+104;
 }
 static void quizView(float x,float w,float *bottom){
+ if(debugMode){
+  if(btn("< All quizzes",x,96,162,40,CQ_PURPLE,0)){
+   debugMode=0;scroll=0;return;
+  }
+  DebugChallengeView v={.x=x,.width=w,.font=font,.mouse=pointer(),
+      .scroll=scroll,.scrollPosition=&scroll,.lightTheme=lightTheme};
+  DrawDebugChallenges(&v,bottom);
+  return;
+ }
  if(quizTrack<0){quizMenu(x,w,bottom);return;}
  if(quizFinished){quizSummary(x,w,bottom);return;}
  float y=101;
@@ -840,7 +859,7 @@ void RunApp(void){
   uiScale=computeScale(physicalW,physicalH);
   windowW=(int)(physicalW/uiScale);windowH=(int)(physicalH/uiScale);
   SetMouseCursor(MOUSE_CURSOR_DEFAULT);
-  if(IsKeyPressed(KEY_ESCAPE)){if(screen==2&&quizTrack>=0){quizTrack=-1;quizFinished=0;scroll=0;}else if(selectedLesson>=0){selectedLesson=-1;scroll=0;}else if(selectedLab>=0){labSaveDraft(selectedLab,labCode);selectedLab=-1;labFocus=0;scroll=0;}else if(screen)nav(0);}
+  if(IsKeyPressed(KEY_ESCAPE)){if(screen==2&&debugMode){debugMode=0;scroll=0;}else if(screen==2&&quizTrack>=0){quizTrack=-1;quizFinished=0;scroll=0;}else if(selectedLesson>=0){selectedLesson=-1;scroll=0;}else if(selectedLab>=0){labSaveDraft(selectedLab,labCode);selectedLab=-1;labFocus=0;scroll=0;}else if(screen)nav(0);}
   float side=254,x=side+37,w=windowW-side-75;if(w<450)w=450;
   if(CheckCollisionPointRec(pointer(),RR(side,80,(float)windowW-side,(float)windowH-80))&&
      !(screen==3&&selectedLab>=0&&CheckCollisionPointRec(pointer(),labEditorWheelRect))){scroll-=GetMouseWheelMove()*45;}
