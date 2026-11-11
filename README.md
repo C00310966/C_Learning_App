@@ -25,7 +25,9 @@ CodeQuest-Raylib/
 │   ├── tutorials_extra.c  # Additional course-specific explanations and examples
 │   ├── quizzes.c          # Quiz questions and explanations
 │   ├── exercises.c        # Coursework labs
-│   └── progress.c         # Saved XP, streak and completion data
+│   ├── progress.c         # Saved XP, streak and completion data
+│   └── lab_runner.c       # Local compiler and reference-output checks
+├── lab_templates/         # 24 starter programs and 24 expected outputs
 ├── Makefile
 └── README.md
 ```
@@ -70,7 +72,7 @@ Zoom is limited when the window is too small to keep the navigation and lesson c
 
 ## Learning progress
 
-Progress is written to `codequest_progress.dat` in the current working directory, so launch from the project root for consistent save location. Labs are **self-checked**, not automatically compiled or graded, and the app does not execute untrusted code. The app does not require optional font or image assets: it tries a locally installed system font and falls back to the default Raylib font.
+Progress is written to `codequest_progress.dat` in the current working directory, so launch from the project root for consistent save location. Labs can now be compiled and checked against provided reference output using the local GCC/Clang toolchain. The output comparison is educational feedback, not secure grading or a sandbox. The app does not require optional font or image assets: it tries a locally installed system font and falls back to the default Raylib font.
 
 ## Requirements and testing
 
@@ -104,3 +106,72 @@ Each of the 24 learning chapters now includes **four detailed tutorial subsectio
 Course references: Intro to C; Lab1 (2).cpp; Pointers; Lecture on Pointers in C++ and linkedlist; memory management and pointers; Pointers & linkedList lab; templates and stl; STL Lists and Maps; Operator Overloading. Practical examples link directly to the supplied leap-year, prime, array, pointer-only string, singly and doubly linked-list, template, vector, list and map tasks.
 
 **Build change:** `src/tutorials_extra.c` is compiled by both the Windows GCC VS Code task and the macOS Makefile. If updating an older project manually, copy that file, the modified `src/ui.c` and `include/curriculum.h`, and update the source list for both platforms.
+
+## Interactive lab code editor (24 exercises)
+
+Open **Coding labs** and select any exercise. Every lab now contains an editable
+starter program and a small set of reference output tests in `lab_templates/`.
+
+- **Run Code:** compile the current C/C++ source with an installed local compiler,
+  execute it, and show compiler errors or console output.
+- **Check Solution:** compile and run the same code, compare console output with
+  the corresponding `.expected` reference file, and award **60 XP once** for a
+  match. This is an educational output check, **not** exhaustive semantic
+  verification or an anti-cheating system; follow all written task constraints.
+- **Reset Starter:** restore the original unfinished template for that lab.
+- **Drafts:** code is saved automatically when leaving/changing a lab or exiting
+  the application, and whenever you press **Ctrl+S** (or Cmd+S). Saved in
+  `codequest_lab_drafts/` beside the executable's working directory.
+- **Editing:** click inside the editor to focus. Use arrow keys, Home/End,
+  Backspace/Delete, Return, Tab, and Ctrl/Cmd+V. Ctrl/Cmd+C copies the complete
+  editor buffer, not a selection. Large files are limited to ~16 KB.
+
+### Compiler requirement
+
+The **application** itself is written in C11 and rendered solely with Raylib;
+the code runner uses OS process functions and an **existing compiler**:
+
+- **Windows:** GCC and G++ on PATH, or in `C:\msys64\ucrt64\bin`.
+- **macOS:** Clang and Clang++ from Xcode Command Line Tools (`xcode-select --install`).
+- **Linux:** GCC and G++ on PATH (if using a compatible Raylib build).
+
+C++ templates use C++17. C templates use C11. No compiler is bundled.
+Always launch CodeQuest with the project root as the current working directory,
+so it can find `lab_templates/`.
+
+**Safety:** The compiled student's code runs directly on their computer with
+normal user permissions. It is **not sandboxed**. Only run code you trust;
+untrusted source can access or modify local files. Compilation is limited to
+12 seconds and the program itself to 3 seconds, to help handle infinite loops.
+These commands run synchronously, so CodeQuest may briefly stop redrawing while
+compiling or running a lab. For stronger isolation, run in a dedicated sandbox
+or virtual machine before using arbitrary student submissions.
+
+## Lab editor keyboard and mouse editing
+
+The Labs code editor supports **holding Backspace or Delete** to remove text
+continuously (including across lines). Click and **drag the mouse** across
+characters or lines to highlight a selection; keep dragging above or below
+the visible editor to scroll through longer files. You can also extend a
+selection with **Shift + arrow keys** (or Shift + Home/End).
+
+- **Type, Backspace, or Delete** to replace or remove highlighted text.
+- **Ctrl+A / Command+A:** select all code.
+- **Ctrl+C / Command+C:** copy the selection.
+- **Ctrl+X / Command+X:** cut the selection.
+- **Ctrl+V / Command+V:** paste over the selection.
+- **Ctrl+S / Command+S:** save the current draft.
+
+Navigation and selected text are independent from compiled output; any edit
+invalidates the prior test result. Saved drafts and all existing labs are
+preserved.
+
+## Lab editor navigation
+
+The built-in editor displays a **vertical scrollbar** when source code extends beyond
+its visible lines. Hover over the editor and use the mouse wheel to move through
+code without scrolling the surrounding Labs page. You can also click the scrollbar
+track or drag its purple thumb. Drag-selection and Shift+arrow selection are still
+supported, and the viewport follows the caret when typing or navigating with keys.
+Holding **Enter** (or Numpad Enter) now repeatedly inserts new lines, using the
+same repeat timing as holding Backspace/Delete.

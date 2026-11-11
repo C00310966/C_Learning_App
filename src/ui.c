@@ -6,6 +6,7 @@
 #include "curriculum.h"
 #include "progress.h"
 #include "app.h"
+#include "lab_runner.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +42,21 @@ static Font font={0};
 static int screen=0, selectedTrack=-1, selectedLesson=-1, selectedLab=-1;
 /* A quiz is a complete track assessment, not an individual question.
  * The session stores answers so the final review can identify weaknesses. */
+static char labCode[LAB_CODE_CAP]="";
+static int labLoaded=-1, labCursor=0, labFocus=0, labFirstLine=0;
+/* Selection is the half-open interval between anchor and cursor. */
+static int labAnchor=0, labDragging=0;
+static float labDragScrollTime=0.0f;
+/* Scrollbar drag is separate from code/text selection dragging. */
+static int labScrollbarDragging=0;
+static float labScrollbarGrab=0.0f;
+static Rectangle labEditorWheelRect={0};
+#define LAB_EDITOR_VISIBLE_LINES 13
+#define LAB_EDITOR_LINE_HEIGHT 23.0f
+static int labRepeatKey=0;
+static float labRepeatTime=0.0f;
+static LabRunResult labResult={0};
+static int labHasResult=0;
 static int quizTrack=-1, quizPosition=0, quizCount=0;
 static int quizQuestionIds[30], quizSelections[30];
 static int quizChoice=-1, quizAnswered=0, quizFinished=0;
@@ -115,7 +131,7 @@ static int totalLabs(void){int n=0;for(int i=0;i<COUNT(labTasks);i++)n+=progress
 static int totalQuizzes(void){int n=0;for(int i=0;i<COUNT(quizzes);i++)n+=progress.quizDone[i]!=0;return n;}
 static int trackLessonCount(int t){int n=0;for(int i=0;i<COUNT(lessons);i++)if(lessons[i].track==t)n++;return n;}
 static int trackDone(int t){int n=0;for(int i=0;i<COUNT(lessons);i++)if(lessons[i].track==t)n+=progress.learned[i]!=0;return n;}
-static void nav(int s){screen=s;selectedLesson=-1;selectedLab=-1;scroll=0;searchActive=0;if(s==2){quizTrack=-1;quizFinished=0;}}
+static void nav(int s){if(labLoaded>=0)labSaveDraft(labLoaded,labCode);labFocus=0;screen=s;selectedLesson=-1;selectedLab=-1;scroll=0;searchActive=0;if(s==2){quizTrack=-1;quizFinished=0;}}
 static int contains(const char*s,const char*term){if(!term[0])return 1;char a[1100],b[100];snprintf(a,sizeof(a),"%s",s);snprintf(b,sizeof(b),"%s",term);for(char*p=a;*p;p++)if(*p>='A'&&*p<='Z')*p+=32;for(char*p=b;*p;p++)if(*p>='A'&&*p<='Z')*p+=32;return strstr(a,b)!=NULL;}
 static void startQuiz(int track){
  if(track<0 || track>=COUNT(tracks))return;
@@ -476,28 +492,316 @@ static void quizView(float x,float w,float *bottom){
  }
  *bottom=y+110;
 }
+
+static void openLab(int id){
+ if(labLoaded>=0)labSaveDraft(labLoaded,labCode);
+ labLoaded=id;labCursor=0;labAnchor=0;labDragging=0;labScrollbarDragging=0;labRepeatKey=0;labFirstLine=0;labFocus=0;labHasResult=0;
+ if(!labLoadDraft(id,labCode,sizeof(labCode)))labLoadStarter(id,labCode,sizeof(labCode));
+}
+static int lineStart(int wanted){int line=0;for(int i=0;labCode[i];i++){if(line==wanted)return i;if(labCode[i]=='\n')line++;}return (line==wanted)?(int)strlen(labCode):-1;}
+static int lineOf(int pos){int n=0;for(int i=0;i<pos&&labCode[i];i++)if(labCode[i]=='\n')n++;return n;}
+static int lineColumn(int pos){int n=0;for(int i=pos-1;i>=0&&labCode[i]!='\n';i--)n++;return n;}
+static int editHasSelection(void){return labCursor!=labAnchor;}
+static int editSelStart(void){return labCursor<labAnchor?labCursor:labAnchor;}
+static int editSelEnd(void){return labCursor>labAnchor?labCursor:labAnchor;}
+static void editRemoveSelection(void){
+ if(!editHasSelection())return;
+ int begin=editSelStart(),end=editSelEnd();
+ memmove(labCode+begin,labCode+end,strlen(labCode+end)+1);
+ labCursor=labAnchor=begin;labHasResult=0;
+}
+static void editInsert(const char *value){
+ size_t n=strlen(labCode),add=strlen(value);
+ size_t selected=(size_t)(editSelEnd()-editSelStart());
+ if(n-selected+add>=sizeof(labCode))return;
+ editRemoveSelection();n=strlen(labCode);
+ memmove(labCode+labCursor+add,labCode+labCursor,n-(size_t)labCursor+1);
+ memcpy(labCode+labCursor,value,add);labCursor+=(int)add;
+ labAnchor=labCursor;labHasResult=0;
+}
+static void editDelete(int before){
+ if(editHasSelection()){editRemoveSelection();return;}
+ size_t n=strlen(labCode);
+ if(before){if(labCursor<=0)return;labCursor--;}
+ else if((size_t)labCursor>=n)return;
+ memmove(labCode+labCursor,labCode+labCursor+1,n-(size_t)labCursor);
+ labAnchor=labCursor;labHasResult=0;
+}
+/* Implements initial key press, then OS-like repeat without relying on the
+ * installed raylib version supporting IsKeyPressedRepeat(). */
+static int editorKeyRepeat(int key){
+ if(!IsKeyDown(key))return 0;
+ if(labRepeatKey!=key){
+  if(!IsKeyPressed(key))return 0;
+  labRepeatKey=key;labRepeatTime=0.0f;return 1;
+ }
+ labRepeatTime+=GetFrameTime();
+ if(labRepeatTime>=0.40f){
+  labRepeatTime-=0.045f;
+  if(labRepeatTime<0.35f)labRepeatTime=0.35f;
+  return 1;
+ }
+ return 0;
+}
+static void editorMove(int newPos,int extend){
+ int n=(int)strlen(labCode);
+ if(newPos<0)newPos=0;
+ if(newPos>n)newPos=n;
+ if(!extend&&editHasSelection()){/* Standard editor behavior: arrow collapses selection. */
+  labCursor=newPos;
+ }else labCursor=newPos;
+ if(!extend)labAnchor=labCursor;
+}
+static void editorInput(void){
+ if(!labFocus){labRepeatKey=0;return;}
+ int oldCursor=labCursor;
+ size_t oldLength=strlen(labCode);
+ int ctrl=IsKeyDown(KEY_LEFT_CONTROL)||IsKeyDown(KEY_RIGHT_CONTROL)||IsKeyDown(KEY_LEFT_SUPER)||IsKeyDown(KEY_RIGHT_SUPER);
+ int shift=IsKeyDown(KEY_LEFT_SHIFT)||IsKeyDown(KEY_RIGHT_SHIFT);
+ if(ctrl&&IsKeyPressed(KEY_S)){labSaveDraft(labLoaded,labCode);return;}
+ if(ctrl&&IsKeyPressed(KEY_A)){labAnchor=0;labCursor=(int)strlen(labCode);return;}
+ if(ctrl&&IsKeyPressed(KEY_C)){
+  if(editHasSelection()){
+   int start=editSelStart(),end=editSelEnd();char copy[LAB_CODE_CAP];
+   memcpy(copy,labCode+start,(size_t)(end-start));copy[end-start]=0;SetClipboardText(copy);
+  }return;
+ }
+ if(ctrl&&IsKeyPressed(KEY_X)){
+  if(editHasSelection()){
+   int start=editSelStart(),end=editSelEnd();char copy[LAB_CODE_CAP];
+   memcpy(copy,labCode+start,(size_t)(end-start));copy[end-start]=0;SetClipboardText(copy);
+   editRemoveSelection();
+  }return;
+ }
+ if(ctrl&&IsKeyPressed(KEY_V)){
+  const char *clip=GetClipboardText();
+  if(clip){char clean[LAB_CODE_CAP];int j=0;
+   for(int k=0;clip[k]&&j<LAB_CODE_CAP-1;k++){
+    if(clip[k]=='\r')continue;
+    if(clip[k]=='\n'||clip[k]=='\t'||(unsigned char)clip[k]>=32)clean[j++]=clip[k];
+   }clean[j]=0;editInsert(clean);
+  }return;
+ }
+ /* Prioritise one held editing key. Releasing it resets the repeat timer. */
+ const int repeatKeys[]={KEY_BACKSPACE,KEY_DELETE,KEY_LEFT,KEY_RIGHT,KEY_UP,KEY_DOWN,KEY_ENTER,KEY_KP_ENTER};
+ if(labRepeatKey&&!IsKeyDown(labRepeatKey)){labRepeatKey=0;labRepeatTime=0.0f;}
+ int key=0;
+ for(int i=0;i<COUNT(repeatKeys);i++){
+  if(IsKeyPressed(repeatKeys[i])){labRepeatKey=0;key=repeatKeys[i];break;}
+ }
+ if(!key&&labRepeatKey)key=labRepeatKey;
+ if(key&&editorKeyRepeat(key)){
+  if(key==KEY_ENTER||key==KEY_KP_ENTER)editInsert("\n");
+  else if(key==KEY_BACKSPACE)editDelete(1);
+  else if(key==KEY_DELETE)editDelete(0);
+  else if(key==KEY_LEFT){
+   if(!shift&&editHasSelection())editorMove(editSelStart(),0);
+   else editorMove(labCursor-1,shift);
+  }else if(key==KEY_RIGHT){
+   if(!shift&&editHasSelection())editorMove(editSelEnd(),0);
+   else editorMove(labCursor+1,shift);
+  }else if(key==KEY_UP||key==KEY_DOWN){
+   int column=lineColumn(labCursor),target=lineOf(labCursor)+(key==KEY_UP?-1:1);
+   int pos=lineStart(target);if(pos>=0){while(column--&&labCode[pos]&&labCode[pos]!='\n')pos++;editorMove(pos,shift);}
+  }
+ }
+ if(IsKeyPressed(KEY_HOME))editorMove(labCursor-lineColumn(labCursor),shift);
+ if(IsKeyPressed(KEY_END)){int pos=labCursor;while(labCode[pos]&&labCode[pos]!='\n')pos++;editorMove(pos,shift);}
+ if(IsKeyPressed(KEY_TAB))editInsert("    ");
+ if(!ctrl){for(int ch=GetCharPressed();ch;ch=GetCharPressed())if(ch>=32&&ch<127){char c[2]={(char)ch,0};editInsert(c);}}
+ if(oldCursor!=labCursor||oldLength!=strlen(labCode)){
+  int line=lineOf(labCursor);
+  if(line<labFirstLine)labFirstLine=line;
+  if(line>=labFirstLine+LAB_EDITOR_VISIBLE_LINES)labFirstLine=line-LAB_EDITOR_VISIBLE_LINES+1;
+ }
+}
+/* Translate mouse coordinates into the closest character boundary. */
+static int editorPositionAt(float mouseX,float mouseY,float x,float y){
+ const float lh=23.0f;
+ int row=(int)floorf((mouseY-(y+52))/lh);
+ if(row<0)row=0;
+ if(row>=LAB_EDITOR_VISIBLE_LINES)row=LAB_EDITOR_VISIBLE_LINES-1;
+ int target=labFirstLine+row;
+ int start=lineStart(target);
+ if(start<0){return (int)strlen(labCode);}
+ int end=start;while(labCode[end]&&labCode[end]!='\n')end++;
+ float relativeX=mouseX-(x+65);
+ if(relativeX<=0)return start;
+ /* Calculate nearest midpoint in exactly the same font as the drawn text. */
+ char prefix[LAB_CODE_CAP];int count=0;float previous=0;
+ for(int at=start;at<end&&count<LAB_CODE_CAP-2;at++){
+  prefix[count++]=labCode[at];prefix[count]=0;
+  float width=tw(prefix,15);
+  if(relativeX<(previous+width)/2.0f)return at;
+  previous=width;
+ }
+ return end;
+}
+static void editorPanel(float x,float y,float w){
+ const float h=382,lh=LAB_EDITOR_LINE_HEIGHT;
+ const float top=y+52,trackX=x+w-24,trackY=y+49;
+ const float trackH=LAB_EDITOR_VISIBLE_LINES*lh+6;
+ Color bg=lightTheme?(Color){224,233,247,255}:(Color){12,21,34,255};
+ box(x,y,w,h,.07f,bg);border(x,y,w,h,.07f,labFocus?CQ_PURPLE:CQ_LINE);
+ tx("CODE EDITOR  |  Drag to select  |  Ctrl+A/C/X/V  |  Ctrl+S save",x+18,y+14,12,CQ_MUTED);
+ Rectangle edit=RR(x+9,y+43,w-39,h-54);
+ Rectangle track=RR(trackX,trackY,13,trackH);
+ Vector2 mouse=pointer();float my=mouse.y+scroll;
+ /* This editor owns the mouse wheel when hovered; do not scroll the page too. */
+ labEditorWheelRect=RR(x+9,y+43-scroll,w-18,h-54);
+ int totalLines=lineOf((int)strlen(labCode))+1;
+ int maxFirst=totalLines-LAB_EDITOR_VISIBLE_LINES;
+ if(maxFirst<0)maxFirst=0;
+ if(labFirstLine>maxFirst)labFirstLine=maxFirst;
+ if(labFirstLine<0)labFirstLine=0;
+ if(CheckCollisionPointRec(mouse,labEditorWheelRect)){
+  float wheel=GetMouseWheelMove();
+  if(wheel!=0){labFirstLine-=(int)(wheel*3.0f);if(labFirstLine<0)labFirstLine=0;if(labFirstLine>maxFirst)labFirstLine=maxFirst;}
+ }
+ float thumbH=trackH;
+ float thumbY=trackY;
+ if(maxFirst>0){
+  thumbH=fmaxf(28.0f,trackH*(float)LAB_EDITOR_VISIBLE_LINES/(float)totalLines);
+  if(thumbH>trackH)thumbH=trackH;
+  thumbY=trackY+(trackH-thumbH)*(float)labFirstLine/(float)maxFirst;
+ }
+ Rectangle thumb=RR(trackX,thumbY,13,thumbH);
+ if(maxFirst>0&&hit(track)){
+  labDragging=0;
+  labScrollbarDragging=1;
+  if(CheckCollisionPointRec((Vector2){mouse.x,my},thumb)){
+   labScrollbarGrab=my-thumbY;
+  }else{
+   labScrollbarGrab=thumbH*0.5f;
+  }
+ }
+ if(labScrollbarDragging){
+  if(!IsMouseButtonDown(MOUSE_BUTTON_LEFT))labScrollbarDragging=0;
+  else if(maxFirst>0){
+   float fraction=(my-labScrollbarGrab-trackY)/(trackH-thumbH);
+   if(fraction<0)fraction=0;
+   if(fraction>1)fraction=1;
+   labFirstLine=(int)(fraction*(float)maxFirst+0.5f);
+  }
+ }
+ if(!labScrollbarDragging&&hit(edit)){
+  labFocus=1;labDragging=1;labDragScrollTime=0.0f;
+  labCursor=editorPositionAt(mouse.x,my,x,y);
+  labAnchor=labCursor;
+ }
+ if(labDragging){
+  if(!IsMouseButtonDown(MOUSE_BUTTON_LEFT))labDragging=0;
+  else{
+   /* Continue selecting when the pointer leaves the editor. */
+   labDragScrollTime+=GetFrameTime();
+   if(labDragScrollTime>=0.08f){
+    labDragScrollTime=0.0f;
+    if(my<top&&labFirstLine>0)labFirstLine--;
+    if(my>top+LAB_EDITOR_VISIBLE_LINES*lh&&labFirstLine<maxFirst)labFirstLine++;
+   }
+   labCursor=editorPositionAt(mouse.x,my,x,y);
+  }
+ }
+ if(labFocus)editorInput();
+ /* Enter/backspace can change the line count; update the scrollbar immediately. */
+ totalLines=lineOf((int)strlen(labCode))+1;
+ maxFirst=totalLines-LAB_EDITOR_VISIBLE_LINES;
+ if(maxFirst<0)maxFirst=0;
+ if(labFirstLine>maxFirst)labFirstLine=maxFirst;
+ if(labFirstLine<0)labFirstLine=0;
+ thumbH=maxFirst>0?fmaxf(28.0f,trackH*(float)LAB_EDITOR_VISIBLE_LINES/(float)totalLines):trackH;
+ if(thumbH>trackH)thumbH=trackH;
+ thumbY=maxFirst>0?trackY+(trackH-thumbH)*(float)labFirstLine/(float)maxFirst:trackY;
+ int currentLine=lineOf(labCursor);
+ int selectionStart=editSelStart(),selectionEnd=editSelEnd();
+ for(int row=0;row<LAB_EDITOR_VISIBLE_LINES;row++){
+  int ln=labFirstLine+row,start=lineStart(ln);if(start<0)break;
+  float yy=y+52+row*lh;char num[16];snprintf(num,sizeof(num),"%3d",ln+1);tx(num,x+19,yy,13,CQ_MUTED);
+  char line[1024];int j=0;
+  while(labCode[start+j]&&labCode[start+j]!='\n'&&j<(int)sizeof(line)-1)j++;
+  memcpy(line,labCode+start,(size_t)j);line[j]=0;
+  /* Clip long lines visually. The full source remains editable. */
+  while(j>0&&tw(line,15)>w-122){line[--j]=0;}
+  if(ln==currentLine&&labFocus)box(x+59,yy-2,w-75,21,.02f,alpha(CQ_PURPLE,.12f));
+  if(editHasSelection()){
+   int lineEnd=start+j;
+   int first=selectionStart>start?selectionStart:start;
+   int last=selectionEnd<lineEnd?selectionEnd:lineEnd;
+   if(last>first){
+    char left[1024],through[1024];
+    int startCol=first-start,endCol=last-start;
+    memcpy(left,line,(size_t)startCol);left[startCol]=0;
+    memcpy(through,line,(size_t)endCol);through[endCol]=0;
+    float sx=x+65+tw(left,15);
+    float sw=tw(through,15)-tw(left,15);
+    box(sx,yy-2,sw,21,.02f,alpha(CQ_BLUE,.40f));
+   }
+   /* Highlight a selected newline with a small block at the end of its line. */
+   int fullEnd=start;while(labCode[fullEnd]&&labCode[fullEnd]!='\n')fullEnd++;
+   if(labCode[fullEnd]=='\n'&&selectionStart<=fullEnd&&selectionEnd>fullEnd&&fullEnd<=lineEnd){
+    box(x+65+tw(line,15),yy-2,8,21,.02f,alpha(CQ_BLUE,.40f));
+   }
+  }
+  Color col=(strstr(line,"//")==line||strstr(line,"/*")==line)?CQ_MUTED:CQ_WHITE;
+  tx(line,x+65,yy,15,col);
+  if(ln==currentLine&&labFocus){
+   int colpos=lineColumn(labCursor);int visible=colpos<j?colpos:j;
+   char prefix[1024];memcpy(prefix,line,(size_t)visible);prefix[visible]=0;
+   float cx=x+65+tw(prefix,15);
+   if(cx<x+w-31)DrawRectangle((int)cx,(int)(yy-1),2,19,CQ_PURPLE);
+  }
+ }
+ box(trackX,trackY,13,trackH,.8f,alpha(CQ_LINE,.60f));
+ box(trackX+2,thumbY,9,thumbH,.8f,maxFirst>0?CQ_PURPLE:CQ_MUTED);
+ if(maxFirst>0&&CheckCollisionPointRec((Vector2){mouse.x,my},track))SetMouseCursor(MOUSE_CURSOR_POINTING_HAND);
+ tx("Scroll wheel/drag bar. Hold Enter for newlines; Backspace/Delete repeat. Shift+arrows select.",x+16,y+h-22,11,CQ_MUTED);
+}
 static void labList(float x,float w,float *bottom){float y=95;tx("Coding lab challenges",x,y,30,CQ_WHITE);tx("Real assignments from your worksheets, built for hands-on practise.",x,y+43,15,CQ_MUTED);y+=99;
- box(x,y,w,99,.07f,alpha(CQ_PURPLE,.12f));tx("HOW LABS WORK",x+20,y+16,12,CQ_PURPLE);paragraph("Read the task, implement it in your own C/C++ editor, test it, then mark it complete. This app does not compile or grade arbitrary code.",x+20,y+42,14,CQ_WHITE,w-42);y+=129;
+ box(x,y,w,99,.07f,alpha(CQ_PURPLE,.12f));tx("HOW LABS WORK",x+20,y+16,12,CQ_PURPLE);paragraph("Write code in the built-in editor, Run it with your local compiler, then Check Solution against reference output tests. C uses GCC/Clang; C++ uses G++/Clang++.",x+20,y+42,14,CQ_WHITE,w-42);y+=129;
  for(int t=0;t<COUNT(tracks);t++){int n=0;for(int i=0;i<COUNT(labTasks);i++)if(labTasks[i].track==t)n++;if(!n)continue;
   tx(tracks[t].name,x,y,21,CQ_WHITE);y+=39;
   for(int i=0;i<COUNT(labTasks);i++){if(labTasks[i].track!=t)continue;box(x,y,w,85,.08f,PANEL);
    box(x+17,y+18,45,45,.2f,alpha(tracks[t].color,.19f));tx("</>",x+22,y+29,16,tracks[t].color);
    tx(labTasks[i].title,x+77,y+13,18,CQ_WHITE);tx(labTasks[i].level,x+77,y+47,12,CQ_MUTED);
    if(progress.labDone[i])pill("SOLVED",x+w-101,y+29,CQ_GREEN);else tx("Open  >",x+w-91,y+32,14,CQ_PURPLE);
-   if(hit(RR(x,y,w,85))){selectedLab=i;scroll=0;}y+=98;
+   if(hit(RR(x,y,w,85))){selectedLab=i;openLab(i);scroll=0;}y+=98;
   }y+=21;
  }*bottom=y;
 }
 static void labView(float x,float w,float *bottom){Lab*l=&labTasks[selectedLab];float y=96;Color c=tracks[l->track].color;
- if(btn("<  Back to labs",x,y,180,40,CQ_PURPLE,0)){selectedLab=-1;scroll=0;return;}y+=66;
+ if(labLoaded!=selectedLab)openLab(selectedLab);
+ if(btn("<  Back to labs",x,y,180,40,CQ_PURPLE,0)){labSaveDraft(selectedLab,labCode);selectedLab=-1;labFocus=0;scroll=0;return;}y+=66;
  pill(l->level,x,y,c);y+=45;tx(l->title,x,y,30,CQ_WHITE);y+=57;
- tx("YOUR TASK",x,y,13,c);y+=32;y=paragraph(l->task,x,y,18,CQ_WHITE,w-40)+35;
- tx("SUGGESTED SIGNATURE / STARTING POINT",x,y,12,c);y+=31;y+=codePanel(l->signature,x,y,w);y+=30;
- box(x,y,w,105,.07f,PANEL);tx("TEST CASES / EXPECTED BEHAVIOUR",x+20,y+17,12,CQ_MUTED);paragraph(l->tests,x+20,y+49,16,CQ_WHITE,w-45);y+=129;
- box(x,y,w,112,.07f,alpha(CQ_BLUE,.09f));tx("A LITTLE HINT",x+20,y+18,13,CQ_BLUE);paragraph(l->hint,x+20,y+51,16,CQ_WHITE,w-45);y+=137;
- if(progress.labDone[selectedLab])pill("LAB COMPLETED  +60 XP",x,y,CQ_GREEN);
- else if(btn("I completed this lab   +60 XP",x,y,275,49,CQ_GREEN,1)){progress.labDone[selectedLab]=1;award(60);}
- tx("Completion is self-reported; test your solution first.",x,y+66,13,CQ_MUTED);*bottom=y+127;
+ tx("YOUR TASK",x,y,13,c);y+=32;y=paragraph(l->task,x,y,17,CQ_WHITE,w-40)+26;
+ box(x,y,w,88,.07f,PANEL);tx("REFERENCE TESTS",x+18,y+12,12,CQ_MUTED);paragraph(l->tests,x+18,y+39,14,CQ_WHITE,w-37);y+=109;
+ tx("WRITE YOUR SOLUTION",x,y,14,c);y+=28;
+ editorPanel(x,y,w);y+=396;
+ float bw=(w-24)/3;
+ if(btn("Run Code",x,y,bw,45,CQ_BLUE,1)){
+  labFocus=0;labSaveDraft(selectedLab,labCode);labResult=labExecute(selectedLab,labCode,0);labHasResult=1;
+ }
+ if(btn("Check Solution",x+bw+12,y,bw,45,CQ_GREEN,1)){
+  labFocus=0;labSaveDraft(selectedLab,labCode);labResult=labExecute(selectedLab,labCode,1);labHasResult=1;
+  if(labResult.passed&&!progress.labDone[selectedLab]){progress.labDone[selectedLab]=1;award(60);}
+ }
+ if(btn("Reset Starter",x+2*(bw+12),y,bw,45,CQ_PURPLE,0)){
+  labLoadStarter(selectedLab,labCode,sizeof(labCode));labCursor=0;labAnchor=0;labDragging=0;labScrollbarDragging=0;labFirstLine=0;labHasResult=0;labFocus=0;labSaveDraft(selectedLab,labCode);
+ }
+ y+=67;
+ if(labHasResult){
+  box(x,y,w,labResult.passed?72:76,.07f,alpha(labResult.passed?CQ_GREEN:CQ_BLUE,.10f));
+  tx(labResult.passed?"ALL REFERENCE TESTS PASSED":labResult.compiled?(labResult.ran?"PROGRAM OUTPUT / TEST FEEDBACK":"RUNTIME ERROR"):"COMPILER OUTPUT",x+17,y+12,13,labResult.passed?CQ_GREEN:CQ_BLUE);
+  tx(labResult.passed?"Your code matches the expected output.":"Read the output below and adjust your solution.",x+17,y+41,13,CQ_WHITE);y+=87;
+  box(x,y,w,35,.07f,PANEL);tx("CONSOLE / COMPILER MESSAGES",x+17,y+9,12,CQ_MUTED);y+=44;
+  /* Keep output scrollable as part of main page and cap for large printouts. */
+  const char *p=labResult.output;int lines=0;while(*p&&lines<54){char line[512];int n=0;while(p[n]&&p[n]!='\n'&&n<510)n++;memcpy(line,p,(size_t)n);line[n]=0;tx(line,x+15,y,13,CQ_WHITE);y+=21;lines++;p+=n;if(*p=='\n')p++;else if(!n)break;}
+  if(*p){tx("... console output truncated ...",x+15,y,12,CQ_MUTED);y+=23;}
+  y+=16;
+ }
+ box(x,y,w,100,.07f,alpha(CQ_ORANGE,.08f));tx("HELPFUL HINT",x+18,y+11,12,CQ_ORANGE);paragraph(l->hint,x+18,y+39,14,CQ_WHITE,w-36);y+=120;
+ if(progress.labDone[selectedLab])pill("LAB VERIFIED  +60 XP",x,y,CQ_GREEN);
+ else tx("Complete the reference tests to earn 60 XP. Output checks are not a secure or exhaustive judge.",x,y+8,12,CQ_MUTED);
+ *bottom=y+70;
 }
 static void progressView(float x,float w,float *bottom){float y=95;tx("Your learning journey",x,y,30,CQ_WHITE);tx("Every small win counts. Keep building your skills.",x,y+44,15,CQ_MUTED);y+=102;
  float cell=(w-36)/3;const char*lab[]={"TOTAL XP","CURRENT LEVEL","LEARNING STREAK"};char vals[3][40];snprintf(vals[0],40,"%d",progress.xp);snprintf(vals[1],40,"%d",1+progress.xp/250);snprintf(vals[2],40,"%d day%s",progress.streak,progress.streak==1?"":"s");
@@ -536,9 +840,10 @@ void RunApp(void){
   uiScale=computeScale(physicalW,physicalH);
   windowW=(int)(physicalW/uiScale);windowH=(int)(physicalH/uiScale);
   SetMouseCursor(MOUSE_CURSOR_DEFAULT);
-  if(IsKeyPressed(KEY_ESCAPE)){if(screen==2&&quizTrack>=0){quizTrack=-1;quizFinished=0;scroll=0;}else if(selectedLesson>=0){selectedLesson=-1;scroll=0;}else if(selectedLab>=0){selectedLab=-1;scroll=0;}else if(screen)nav(0);}
+  if(IsKeyPressed(KEY_ESCAPE)){if(screen==2&&quizTrack>=0){quizTrack=-1;quizFinished=0;scroll=0;}else if(selectedLesson>=0){selectedLesson=-1;scroll=0;}else if(selectedLab>=0){labSaveDraft(selectedLab,labCode);selectedLab=-1;labFocus=0;scroll=0;}else if(screen)nav(0);}
   float side=254,x=side+37,w=windowW-side-75;if(w<450)w=450;
-  if(CheckCollisionPointRec(pointer(),RR(side,80,(float)windowW-side,(float)windowH-80))){scroll-=GetMouseWheelMove()*45;}
+  if(CheckCollisionPointRec(pointer(),RR(side,80,(float)windowW-side,(float)windowH-80))&&
+     !(screen==3&&selectedLab>=0&&CheckCollisionPointRec(pointer(),labEditorWheelRect))){scroll-=GetMouseWheelMove()*45;}
   if(scroll<0)scroll=0;
   if(scroll>maxScroll)scroll=maxScroll;
   BeginDrawing();ClearBackground(BG);
@@ -582,5 +887,8 @@ void RunApp(void){
   }
   EndDrawing();
  }
- persist();if(font.texture.id!=GetFontDefault().texture.id)UnloadFont(font);CloseWindow();
+ if(labLoaded>=0)labSaveDraft(labLoaded,labCode);
+ persist();
+ if(font.texture.id!=GetFontDefault().texture.id)UnloadFont(font);
+ CloseWindow();
 }

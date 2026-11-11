@@ -23,6 +23,7 @@
         "src/tutorials_extra.c",
         "src/quizzes.c",
         "src/exercises.c",
+        "src/lab_runner.c",
         "-o",
         "bin/CodeQuest.exe",
         "-L${config:codequest.raylibLib}",

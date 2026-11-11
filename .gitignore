@@ -5,3 +5,7 @@ bin/
 *.obj
 *.exe
 codequest_progress.dat
+
+# User lab drafts (saved automatically)
+codequest_lab_drafts/
+codequest_theme.cfg
