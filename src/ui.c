@@ -8,6 +8,7 @@
 #include "app.h"
 #include "lab_runner.h"
 #include "debug_challenges.h"
+#include "celebration.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -58,6 +59,7 @@ static int labRepeatKey=0;
 static float labRepeatTime=0.0f;
 static LabRunResult labResult={0};
 static int labHasResult=0;
+static int labWasCheck=0; /* A successful Run is neutral until Check Solution verifies it. */
 static int quizTrack=-1, quizPosition=0, quizCount=0;
 static int quizQuestionIds[30], quizSelections[30];
 static int quizChoice=-1, quizAnswered=0, quizFinished=0;
@@ -92,6 +94,15 @@ static void tx(const char*s,float x,float y,int size,Color color){DrawTextEx(fon
 static float tw(const char*s,int size){return MeasureTextEx(font,s,(float)size,0.4f).x;}
 static void box(float x,float y,float w,float h,float round,Color c){DrawRectangleRounded(RR(x,y,w,h),round,12,c);}
 static void border(float x,float y,float w,float h,float round,Color c){DrawRectangleRoundedLinesEx(RR(x,y,w,h),round,12,1.1f,c);}
+/* A subtle status glow behind both feedback and console output. Several low-alpha
+ * layers create a soft halo without shaders or external assets. */
+static void resultGlow(float x,float y,float w,float h,Color accent){
+ box(x-6,y-6,w+12,h+12,.075f,alpha(accent,lightTheme?.035f:.060f));
+ box(x-3,y-3,w+6,h+6,.075f,alpha(accent,lightTheme?.055f:.085f));
+ box(x,y,w,h,.075f,alpha(accent,lightTheme?.095f:.115f));
+ border(x,y,w,h,.075f,alpha(accent,lightTheme?.35f:.29f));
+}
+
 static int btn(const char *text,float x,float y,float w,float h,Color color,int filled){
  Rectangle r=RR(x,y,w,h);int hover=CheckCollisionPointRec(pointer(),clickRect(r));
  box(x,y,w,h,.20f,filled?(hover?ColorBrightness(color,.12f):color):(hover?CARD:PANEL));
@@ -133,7 +144,58 @@ static int totalLabs(void){int n=0;for(int i=0;i<COUNT(labTasks);i++)n+=progress
 static int totalQuizzes(void){int n=0;for(int i=0;i<COUNT(quizzes);i++)n+=progress.quizDone[i]!=0;return n;}
 static int trackLessonCount(int t){int n=0;for(int i=0;i<COUNT(lessons);i++)if(lessons[i].track==t)n++;return n;}
 static int trackDone(int t){int n=0;for(int i=0;i<COUNT(lessons);i++)if(lessons[i].track==t)n+=progress.learned[i]!=0;return n;}
-static void nav(int s){if(labLoaded>=0)labSaveDraft(labLoaded,labCode);labFocus=0;screen=s;selectedLesson=-1;selectedLab=-1;scroll=0;searchActive=0;if(s==2){quizTrack=-1;quizFinished=0;debugMode=0;}}
+static int trackComplete(int t){
+ int found=0;
+ for(int i=0;i<COUNT(lessons);i++)if(lessons[i].track==t){found=1;if(!progress.learned[i])return 0;}
+ for(int i=0;i<COUNT(labTasks);i++)if(labTasks[i].track==t){found=1;if(!progress.labDone[i])return 0;}
+ for(int i=0;i<COUNT(quizzes);i++)if(quizzes[i].track==t){found=1;if(!progress.quizDone[i])return 0;}
+ return found;
+}
+static void checkTrackRewards(void){
+ for(int t=0;t<COUNT(tracks);t++)if(trackComplete(t))rewardTrack(t);
+}
+static int countPerfectQuizzes(void){int n=0;for(int t=0;t<CQ_TRACKS;t++)n+=progress.quizPerfectReward[t]!=0;return n;}
+static int achievementUnlocked(int id){
+ switch(id){
+ case 0:return totalLearned()>=1;
+ case 1:return totalLearned()>=10;
+ case 2:return totalLabs()>=1;
+ case 3:return totalLabs()>=5;
+ case 4:return countPerfectQuizzes()>=1;
+ case 5:return trackComplete(1);
+ case 6:return cqLevel()>=5;
+ case 7:for(int t=0;t<CQ_TRACKS;t++)if(!trackComplete(t))return 0;return 1;
+ case 8:return cqDebugMastered()==CQ_DEBUG_COUNT;
+ default:return 0;
+ }
+}
+static const char *extraLabHints[24]={
+ "A century year like 1900 is not a leap year, but 2000 is. Check % 400 before % 100.",
+ "Keep a copy of the original integer. Each iteration moves the reversed number left by multiplying by 10.",
+ "Handle n < 2 first. Check possible divisors while divisor <= n / divisor.",
+ "Read binary digits from right to left; multiply each digit by 1, 2, 4, 8, and so on.",
+ "Build each row with an inner loop, then print a newline after that row.",
+ "Keep two distinct maxima, and skip numbers equal to the current maximum.",
+ "For insertion, move elements from the end towards the insertion index so values are not overwritten.",
+ "Two separate indexes are required; using one movie twice must not count.",
+ "Mark matched runs before dropping cells. Process each column from bottom to top when applying gravity.",
+ "Push a new scope at '{' and pop it at '}'. A later declaration can shadow an earlier name.",
+ "Use a temporary variable: temp = *a; *a = *b; *b = temp;.",
+ "Start best at *arr, and move a pointer from arr + 1 toward arr + size.",
+ "Use left = arr and right = arr + size - 1. Swap *left and *right until they meet.",
+ "Read one character at a time through *p. For copies, remember the final null terminator.",
+ "Stop on the first mismatching character; if one string ends first, the shorter prefix comes first.",
+ "Every new[] should have a matching delete[]. Never return the address of a local stack variable.",
+ "If *head is NULL, the new node becomes the head. Otherwise walk until current->next is NULL.",
+ "Index zero updates *head. For another position, find the preceding node and link the new node between two neighbors.",
+ "When inserting, update node->prev, node->next and the neighboring nodes' reverse links.",
+ "Keep the template definition visible where you use it; test with both int and double values.",
+ "Return a new Point with x + rhs.x and y + rhs.y; do not mutate the original point.",
+ "Call std::sort(values.begin(), values.end()) after including <algorithm>.",
+ "std::list::splice transfers nodes, so verify that the source list becomes empty after the move.",
+ "Read each word into a std::string, then use counts[word]++ to update the map."
+};
+static void nav(int s){if(labLoaded>=0)labSaveDraft(labLoaded,labCode);labFocus=0;screen=s;selectedLesson=-1;selectedLab=-1;scroll=0;searchActive=0;if(s==2){quizTrack=-1;quizFinished=0;}}
 static int contains(const char*s,const char*term){if(!term[0])return 1;char a[1100],b[100];snprintf(a,sizeof(a),"%s",s);snprintf(b,sizeof(b),"%s",term);for(char*p=a;*p;p++)if(*p>='A'&&*p<='Z')*p+=32;for(char*p=b;*p;p++)if(*p>='A'&&*p<='Z')*p+=32;return strstr(a,b)!=NULL;}
 static void startQuiz(int track){
  if(track<0 || track>=COUNT(tracks))return;
@@ -245,8 +307,9 @@ static void sidebar(float side){
   box(side-17,listTop+(trackScroll/listMax)*(listHeight-thumb),3,thumb,1,CQ_PURPLE);
  }
  box(18,windowH-136,side-36,111,.14f,CARD);tx("YOUR JOURNEY",35,windowH-117,11,CQ_MUTED);
- char str[96];snprintf(str,sizeof(str),"Level %d  /  %d XP",1+progress.xp/250,progress.xp);tx(str,35,windowH-91,18,CQ_WHITE);
- bar(35,windowH-57,side-72,(progress.xp%250)/250.0f,CQ_PURPLE);
+ char str[96];snprintf(str,sizeof(str),"Lv %d  %s",cqLevel(),cqRank(cqLevel()));tx(str,35,windowH-93,14,CQ_WHITE);
+ snprintf(str,sizeof(str),"%d XP  |  %d available",progress.xp,progress.xpWallet);tx(str,35,windowH-72,11,CQ_MUTED);
+ bar(35,windowH-46,side-72,(float)(progress.xp-cqLevelStart(cqLevel()))/(cqLevelNext()-cqLevelStart(cqLevel())),CQ_PURPLE);
 }
 static void header(float x,float width,const char*section){
  tx(section,x,37,14,CQ_MUTED);
@@ -335,7 +398,7 @@ static void lessonView(float x,float w,float *bottom){Lesson*l=&lessons[selected
 
  box(x,y,w,108,.08f,alpha(c,.10f));tx("GOOD TO KNOW",x+19,y+16,12,c);
  paragraph(l->tip,x+19,y+43,15,CQ_WHITE,w-40);y+=134;
- if(progress.learned[selectedLesson]){pill("LESSON COMPLETED  +30 XP",x,y,CQ_GREEN);}else if(btn("Mark as learned   +30 XP",x,y,248,48,CQ_GREEN,1)){progress.learned[selectedLesson]=1;award(30);}
+ if(progress.learned[selectedLesson]){pill("LESSON COMPLETED  +30 XP",x,y,CQ_GREEN);}else if(btn("Mark as learned   +30 XP",x,y,248,48,CQ_GREEN,1)){progress.learned[selectedLesson]=1;award(CQ_XP_LESSON);checkTrackRewards();}
  if(btn("Practise with a quiz  >",x+265,y,230,48,CQ_PURPLE,0))startQuiz(l->track);
  *bottom=y+105;
 }
@@ -348,7 +411,9 @@ static void quizMenu(float x,float w,float *bottom){
  /* Independent activity: keeps existing quizzes, scores and saved progress intact. */
  box(x,y,w,109,.10f,PANEL);border(x,y,w,109,.10f,CQ_ORANGE);
  tx("DEBUG THE CODE",x+20,y+15,13,CQ_ORANGE);
- tx("Find the bug, choose the fix, and learn why it works.",x+20,y+45,15,CQ_WHITE);
+ char debugStats[110];
+ snprintf(debugStats,sizeof(debugStats),"Find the bug, choose the fix  |  %d / %d mastered  |  Earn XP",cqDebugMastered(),CQ_DEBUG_COUNT);
+ tx(debugStats,x+20,y+45,14,CQ_WHITE);
  if(btn("START CHALLENGES  >",x+w-227,y+30,209,50,CQ_ORANGE,1)){
   debugMode=1;scroll=0;return;
  }
@@ -495,7 +560,7 @@ static void quizView(float x,float w,float *bottom){
   y+=height+20;
   const int last=(quizPosition==quizCount-1);
   if(btn(last?"Finish quiz and view results  >":"Next question  >",x,y,last?305:213,49,CQ_PURPLE,1)){
-   if(last){quizFinished=1;}else{quizPosition++;quizChoice=-1;quizAnswered=0;}
+   if(last){quizFinished=1;rewardQuizSession(quizTrack,quizScore(),quizCount);checkTrackRewards();}else{quizPosition++;quizChoice=-1;quizAnswered=0;}
    scroll=0;return;
   }
  }else{
@@ -503,9 +568,10 @@ static void quizView(float x,float w,float *bottom){
    quizAnswered=1;quizSelections[quizPosition]=quizChoice;
    progress.quizAttempts++;
    if(quizChoice==q->correct){
+    celebrationCorrect(x+w*0.50f,y-scroll-80.0f);
     progress.quizCorrect++;
     int id=quizQuestionIds[quizPosition];
-    if(!progress.quizDone[id]){progress.quizDone[id]=1;award(20);}else persist();
+    if(!progress.quizDone[id]){progress.quizDone[id]=1;award(CQ_XP_QUIZ_ANSWER);checkTrackRewards();}else persist();
    }else persist();
   }
  }
@@ -797,54 +863,139 @@ static void labView(float x,float w,float *bottom){Lab*l=&labTasks[selectedLab];
  editorPanel(x,y,w);y+=396;
  float bw=(w-24)/3;
  if(btn("Run Code",x,y,bw,45,CQ_BLUE,1)){
-  labFocus=0;labSaveDraft(selectedLab,labCode);labResult=labExecute(selectedLab,labCode,0);labHasResult=1;
+  labFocus=0;labSaveDraft(selectedLab,labCode);labResult=labExecute(selectedLab,labCode,0);labHasResult=1;labWasCheck=0;
  }
  if(btn("Check Solution",x+bw+12,y,bw,45,CQ_GREEN,1)){
-  labFocus=0;labSaveDraft(selectedLab,labCode);labResult=labExecute(selectedLab,labCode,1);labHasResult=1;
-  if(labResult.passed&&!progress.labDone[selectedLab]){progress.labDone[selectedLab]=1;award(60);}
+  labFocus=0;labSaveDraft(selectedLab,labCode);labResult=labExecute(selectedLab,labCode,1);labHasResult=1;labWasCheck=1;
+  if(labResult.passed&&!progress.labDone[selectedLab]){progress.labDone[selectedLab]=1;award(CQ_XP_LAB);checkTrackRewards();}
  }
  if(btn("Reset Starter",x+2*(bw+12),y,bw,45,CQ_PURPLE,0)){
   labLoadStarter(selectedLab,labCode,sizeof(labCode));labCursor=0;labAnchor=0;labDragging=0;labScrollbarDragging=0;labFirstLine=0;labHasResult=0;labFocus=0;labSaveDraft(selectedLab,labCode);
  }
  y+=67;
  if(labHasResult){
-  box(x,y,w,labResult.passed?72:76,.07f,alpha(labResult.passed?CQ_GREEN:CQ_BLUE,.10f));
-  tx(labResult.passed?"ALL REFERENCE TESTS PASSED":labResult.compiled?(labResult.ran?"PROGRAM OUTPUT / TEST FEEDBACK":"RUNTIME ERROR"):"COMPILER OUTPUT",x+17,y+12,13,labResult.passed?CQ_GREEN:CQ_BLUE);
-  tx(labResult.passed?"Your code matches the expected output.":"Read the output below and adjust your solution.",x+17,y+41,13,CQ_WHITE);y+=87;
-  box(x,y,w,35,.07f,PANEL);tx("CONSOLE / COMPILER MESSAGES",x+17,y+9,12,CQ_MUTED);y+=44;
-  /* Keep output scrollable as part of main page and cap for large printouts. */
-  const char *p=labResult.output;int lines=0;while(*p&&lines<54){char line[512];int n=0;while(p[n]&&p[n]!='\n'&&n<510)n++;memcpy(line,p,(size_t)n);line[n]=0;tx(line,x+15,y,13,CQ_WHITE);y+=21;lines++;p+=n;if(*p=='\n')p++;else if(!n)break;}
-  if(*p){tx("... console output truncated ...",x+15,y,12,CQ_MUTED);y+=23;}
-  y+=16;
+  /* Passing a reference check is green; failed checks or program errors are
+   * red. A successful plain Run is neutral, as it has not been verified. */
+  int verified=labWasCheck&&labResult.passed;
+  int failed=!labResult.compiled||!labResult.ran||(labWasCheck&&!labResult.passed);
+  Color statusColor=verified?CQ_GREEN:(failed?CQ_RED:CQ_BLUE);
+  const char *statusTitle=verified?"ALL REFERENCE TESTS PASSED":
+      (!labResult.compiled?"COMPILATION FAILED":(!labResult.ran?"PROGRAM FAILED":
+      (labWasCheck?"REFERENCE TESTS NOT PASSED":"PROGRAM RAN SUCCESSFULLY")));
+  const char *statusText=verified?"Your code matches the expected output.":
+      (failed?"Read the messages below and adjust your solution.":"Run completed. Select Check Solution to verify your code.");
+  /* Size the shared glow to cover the entire console, including all lines. */
+  const char *countp=labResult.output;
+  int outputLines=0;
+  while(*countp&&outputLines<54){
+   int n=0;while(countp[n]&&countp[n]!='\n'&&n<510)n++;
+   outputLines++;countp+=n;
+   if(*countp=='\n')countp++;
+   else if(n==0)break;
+  }
+  int truncated=*countp!=0;
+  float resultH=115+21.0f*outputLines+(truncated?23.0f:0.0f);
+  resultGlow(x,y,w,resultH,statusColor);
+  tx(statusTitle,x+18,y+14,13,statusColor);
+  tx(statusText,x+18,y+43,13,CQ_WHITE);
+  box(x+14,y+77,w-28,28,.12f,alpha(statusColor,lightTheme?.09f:.12f));
+  tx("CONSOLE / COMPILER MESSAGES",x+27,y+84,12,statusColor);
+  float outY=y+115;
+  const char *p=labResult.output;int lines=0;
+  while(*p&&lines<54){
+   char line[512];int n=0;
+   while(p[n]&&p[n]!='\n'&&n<510)n++;
+   memcpy(line,p,(size_t)n);line[n]=0;
+   tx(line,x+21,outY,13,CQ_WHITE);
+   outY+=21;lines++;p+=n;
+   if(*p=='\n')p++;
+   else if(!n)break;
+  }
+  if(*p){tx("... console output truncated ...",x+21,outY,12,CQ_MUTED);}
+  y+=resultH+22;
  }
  box(x,y,w,100,.07f,alpha(CQ_ORANGE,.08f));tx("HELPFUL HINT",x+18,y+11,12,CQ_ORANGE);paragraph(l->hint,x+18,y+39,14,CQ_WHITE,w-36);y+=120;
- if(progress.labDone[selectedLab])pill("LAB VERIFIED  +60 XP",x,y,CQ_GREEN);
- else tx("Complete the reference tests to earn 60 XP. Output checks are not a secure or exhaustive judge.",x,y+8,12,CQ_MUTED);
+ if(progress.extraHint[selectedLab]){
+  box(x,y,w,108,.08f,alpha(CQ_BLUE,.11f));tx("EXTRA HINT UNLOCKED",x+18,y+12,12,CQ_BLUE);
+  paragraph(extraLabHints[selectedLab],x+18,y+42,14,CQ_WHITE,w-35);y+=128;
+ }else{
+  box(x,y,w,75,.08f,PANEL);
+  tx("Need another clue? Unlock an extra hint for 100 XP.",x+17,y+13,14,CQ_WHITE);
+  char wallet[72];snprintf(wallet,sizeof(wallet),"Available: %d XP",progress.xpWallet);tx(wallet,x+17,y+42,12,CQ_MUTED);
+  if(btn("Unlock hint -100 XP",x+w-218,y+22,198,42,CQ_PURPLE,progress.xpWallet>=CQ_HINT_COST))spendHint(selectedLab);
+  y+=95;
+ }
+ if(progress.labDone[selectedLab])pill("LAB VERIFIED  +75 XP",x,y,CQ_GREEN);
+ else tx("Pass the reference tests for 75 XP (first success only).",x,y+8,12,CQ_MUTED);
  *bottom=y+70;
 }
-static void progressView(float x,float w,float *bottom){float y=95;tx("Your learning journey",x,y,30,CQ_WHITE);tx("Every small win counts. Keep building your skills.",x,y+44,15,CQ_MUTED);y+=102;
- float cell=(w-36)/3;const char*lab[]={"TOTAL XP","CURRENT LEVEL","LEARNING STREAK"};char vals[3][40];snprintf(vals[0],40,"%d",progress.xp);snprintf(vals[1],40,"%d",1+progress.xp/250);snprintf(vals[2],40,"%d day%s",progress.streak,progress.streak==1?"":"s");
- for(int i=0;i<3;i++){float xx=x+i*(cell+18);box(xx,y,cell,122,.08f,PANEL);tx(lab[i],xx+20,y+23,12,CQ_MUTED);tx(vals[i],xx+20,y+52,27,i==0?CQ_ORANGE:i==1?CQ_PURPLE:CQ_GREEN);}y+=159;
- box(x,y,w,135,.08f,PANEL);tx("Progress to next level",x+22,y+24,20,CQ_WHITE);char s[70];snprintf(s,sizeof(s),"%d / 250 XP",progress.xp%250);tx(s,x+w-132,y+28,14,CQ_MUTED);bar(x+22,y+85,w-44,(progress.xp%250)/250.0f,CQ_PURPLE);y+=165;
- tx("Topics you've studied",x,y,22,CQ_WHITE);y+=45;
- for(int t=0;t<COUNT(tracks);t++){int done=trackDone(t),all=trackLessonCount(t);box(x,y,w,82,.09f,PANEL);DrawCircle(x+30,y+33,7,tracks[t].color);tx(tracks[t].name,x+48,y+16,17,CQ_WHITE);
-  snprintf(s,sizeof(s),"%d of %d completed",done,all);tx(s,x+w-173,y+18,13,CQ_MUTED);bar(x+48,y+56,w-95,(float)done/all,tracks[t].color);y+=95;}
- y+=21;box(x,y,w,147,.08f,PANEL);tx("Quiz performance",x+22,y+20,22,CQ_WHITE);
- float accuracy=progress.quizAttempts?100.0f*progress.quizCorrect/progress.quizAttempts:0.0f;snprintf(s,sizeof(s),"%.0f%%",accuracy);tx(s,x+22,y+59,29,CQ_GREEN);
- snprintf(s,sizeof(s),"%d correct / %d attempts",progress.quizCorrect,progress.quizAttempts);tx(s,x+123,y+70,15,CQ_MUTED);bar(x+22,y+119,w-44,accuracy/100,CQ_GREEN);
- y+=179;tx("Focus areas",x,y,22,CQ_WHITE);y+=42;
- int weakest=0;float ratio=2;for(int t=0;t<COUNT(tracks);t++){float r=(float)trackDone(t)/trackLessonCount(t);if(r<ratio){ratio=r;weakest=t;}}
- box(x,y,w,115,.08f,alpha(tracks[weakest].color,.11f));tx("SUGGESTED NEXT STEP",x+20,y+15,12,tracks[weakest].color);tx(tracks[weakest].name,x+20,y+43,20,CQ_WHITE);
- if(btn("Study this track  >",x+w-208,y+43,187,44,tracks[weakest].color,1)){selectedTrack=weakest;nav(1);}
- *bottom=y+147;
+static void progressView(float x,float w,float *bottom){
+ float y=95;tx("Your learning journey",x,y,30,CQ_WHITE);
+ tx("Level up, collect achievements and spend XP on optional lab hints.",x,y+44,15,CQ_MUTED);y+=97;
+ int level=cqLevel(),first=cqLevelStart(level),next=cqLevelNext();
+ box(x,y,w,175,.10f,alpha(CQ_PURPLE,.12f));
+ char s[140];snprintf(s,sizeof(s),"LEVEL %d  -  %s",level,cqRank(level));tx(s,x+22,y+22,23,CQ_WHITE);
+ snprintf(s,sizeof(s),"%d total XP    |    %d spendable XP",progress.xp,progress.xpWallet);
+ tx(s,x+22,y+62,17,CQ_MUTED);
+ snprintf(s,sizeof(s),"%d / %d XP to next level",progress.xp-first,next-first);
+ tx(s,x+22,y+104,14,CQ_MUTED);
+ bar(x+22,y+137,w-44,(float)(progress.xp-first)/(next-first),CQ_PURPLE);
+ y+=197;
+ tx("Achievements",x,y,24,CQ_WHITE);y+=43;
+ const char *names[]={"First Steps","Bookworm","First Solution","Problem Solver","Perfect Score","Pointer Master","Level Five","CodeQuest Champion","Bug Hunter"};
+ const char *descs[]={"Complete your first lesson","Complete 10 lessons","Verify your first coding lab","Verify 5 coding labs","Score 100% on a quiz","Complete the Pointers & Memory track","Reach level 5","Finish all five learning tracks","Master all 12 debugging challenges"};
+ int unlocked=0;for(int i=0;i<9;i++)unlocked+=achievementUnlocked(i);
+ snprintf(s,sizeof(s),"%d of 9 achievements unlocked",unlocked);tx(s,x,y,14,CQ_MUTED);y+=35;
+ float half=(w-16)/2;
+ for(int i=0;i<9;i++){
+  float xx=x+(i%2)*(half+16), yy=y+(i/2)*91;
+  int earned=achievementUnlocked(i);
+  box(xx,yy,half,77,.08f,earned?alpha(CQ_GREEN,.12f):PANEL);
+  border(xx,yy,half,77,.08f,earned?alpha(CQ_GREEN,.33f):CQ_LINE);
+  tx(earned?"*":"-",xx+15,yy+17,23,earned?CQ_GREEN:CQ_MUTED);
+  tx(names[i],xx+42,yy+13,16,earned?CQ_WHITE:CQ_MUTED);
+  tx(descs[i],xx+42,yy+43,12,CQ_MUTED);
+ }
+ y+=5*91+25;
+ tx("How XP works",x,y,23,CQ_WHITE);y+=42;
+ box(x,y,w,191,.08f,PANEL);
+ tx("Lesson +30    |    New correct quiz answer +20    |    Verified lab +75",x+18,y+19,15,CQ_WHITE);
+ tx("First quiz pass (70%+) +50    |    First perfect quiz +25",x+18,y+53,15,CQ_WHITE);
+ tx("Complete every lesson, lab and quiz question in a track +150",x+18,y+87,15,CQ_WHITE);
+ tx("Debug: first correct fix +20  |  first 70%+ session +50  |  first perfect +25",x+18,y+120,13,CQ_WHITE);
+ tx("Extra hint -100 spendable XP. Rewards are granted once per milestone.",x+18,y+153,13,CQ_MUTED);
+ y+=217;
+ tx("Learning tracks",x,y,23,CQ_WHITE);y+=43;
+ for(int t=0;t<COUNT(tracks);t++){
+  int done=trackDone(t),all=trackLessonCount(t);
+  box(x,y,w,82,.09f,PANEL);DrawCircle(x+28,y+32,7,tracks[t].color);
+  tx(tracks[t].name,x+46,y+15,17,CQ_WHITE);
+  snprintf(s,sizeof(s),"%d / %d lessons%s",done,all,trackComplete(t)?"  |  TRACK MASTERED":"");
+  tx(s,x+w-264,y+18,13,CQ_MUTED);
+  bar(x+46,y+56,w-92,(float)done/all,tracks[t].color);y+=95;
+ }
+ y+=20;
+ box(x,y,w,147,.08f,PANEL);tx("Quiz performance",x+22,y+20,22,CQ_WHITE);
+ float accuracy=progress.quizAttempts?100.0f*progress.quizCorrect/progress.quizAttempts:0.0f;
+ snprintf(s,sizeof(s),"%.0f%%",accuracy);tx(s,x+22,y+59,29,CQ_GREEN);
+ snprintf(s,sizeof(s),"%d correct / %d attempts",progress.quizCorrect,progress.quizAttempts);
+ tx(s,x+123,y+70,15,CQ_MUTED);bar(x+22,y+119,w-44,accuracy/100,CQ_GREEN);
+ y+=179;
+ int weakest=0;float ratio=2;
+ for(int t=0;t<COUNT(tracks);t++){float r=(float)trackDone(t)/trackLessonCount(t);if(r<ratio){ratio=r;weakest=t;}}
+ tx("Suggested next step",x,y,23,CQ_WHITE);y+=39;
+ box(x,y,w,106,.08f,alpha(tracks[weakest].color,.11f));
+ tx(tracks[weakest].name,x+20,y+20,20,CQ_WHITE);
+ if(btn("Study this track  >",x+w-208,y+35,187,44,tracks[weakest].color,1)){selectedTrack=weakest;nav(1);}
+ *bottom=y+133;
 }
 
 void RunApp(void){
- SetConfigFlags(FLAG_WINDOW_RESIZABLE|FLAG_MSAA_4X_HINT);InitWindow(windowW,windowH,"CodeQuest | C & C++ Learning Studio");SetWindowMinSize(1000,650);SetTargetFPS(60);
+ SetConfigFlags(FLAG_WINDOW_RESIZABLE|FLAG_MSAA_4X_HINT);InitWindow(windowW,windowH,"CodeQuest | C & C++ Learning Studio");SetWindowMinSize(1000,650);SetTargetFPS(60);celebrationInit();
  /* Optional OS font. No images, textures, fonts, or other assets required. */
  const char *paths[]={"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf","/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf","C:/Windows/Fonts/segoeui.ttf","/System/Library/Fonts/Supplemental/Arial.ttf"};
  font=GetFontDefault();for(int i=0;i<COUNT(paths);i++){if(FileExists(paths[i])){Font loaded=LoadFontEx(paths[i],40,NULL,0);if(loaded.texture.id){font=loaded;SetTextureFilter(font.texture,TEXTURE_FILTER_BILINEAR);break;}}}
- loadProgress();loadTheme();
+ loadProgress();checkTrackRewards();loadTheme();
  while(!WindowShouldClose()){
   /* F11 toggles fullscreen. Ctrl + plus/minus adjusts the UI zoom for
    * accessibility; Ctrl + 0 resets it. */
@@ -894,6 +1045,11 @@ void RunApp(void){
   uiScrollActive=0;
   EndScissorMode();
 
+  /* Confetti is rendered above the scrolling content in logical screen coordinates. */
+  BeginMode2D(fixedCamera);
+  celebrationDraw(GetFrameTime());
+  EndMode2D();
+
   maxScroll=fmaxf(0,bottom-windowH+38);if(scroll>maxScroll)scroll=maxScroll;
   if(maxScroll>0){
    BeginMode2D(fixedCamera);
@@ -908,6 +1064,7 @@ void RunApp(void){
  }
  if(labLoaded>=0)labSaveDraft(labLoaded,labCode);
  persist();
+ celebrationClose();
  if(font.texture.id!=GetFontDefault().texture.id)UnloadFont(font);
  CloseWindow();
 }

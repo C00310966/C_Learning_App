@@ -115,7 +115,7 @@ starter program and a small set of reference output tests in `lab_templates/`.
 - **Run Code:** compile the current C/C++ source with an installed local compiler,
   execute it, and show compiler errors or console output.
 - **Check Solution:** compile and run the same code, compare console output with
-  the corresponding `.expected` reference file, and award **60 XP once** for a
+  the corresponding `.expected` reference file, and award **75 XP once** for a
   match. This is an educational output check, **not** exhaustive semantic
   verification or an anti-cheating system; follow all written task constraints.
 - **Reset Starter:** restore the original unfinished template for that lab.
@@ -175,3 +175,62 @@ track or drag its purple thumb. Drag-selection and Shift+arrow selection are sti
 supported, and the viewport follows the caret when typing or navigating with keys.
 Holding **Enter** (or Numpad Enter) now repeatedly inserts new lines, using the
 same repeat timing as holding Backspace/Delete.
+
+### Lab feedback glow
+
+The Labs editor's console and solution-feedback area now has a subtle status-coloured background and outline: **green** when Check Solution passes its reference test, **red** for incorrect reference-test output or compile/run errors, and **blue/neutral** after a successful Run Code before verification. This works in both light and dark themes and requires no new assets or dependencies.
+
+
+## XP, levels, achievements and extra hints
+
+The Progress screen now shows an increasing level threshold, a rank name, a
+separate spendable XP balance and eight achievements. Total earned XP always
+determines level and rank; spending XP on a lab hint never decreases your level.
+
+XP rewards are one-time per activity or milestone:
+
+- Finish a new lesson: **30 XP**.
+- First correct answer to each quiz question: **20 XP**.
+- First 70%-or-better result in each track quiz: **50 XP**.
+- First perfect result in each track quiz: **25 XP**.
+- First successful reference test on a lab: **75 XP**.
+- Master a track (all its lessons, labs and quiz questions): **150 XP**.
+
+Every lab has its original free hint and an optional second hint. Students can
+unlock the second hint for **100 spendable XP**, permanently for that lab.
+Unlocking does not affect total XP or levels. The lab checker still compares
+expected output and is not exhaustive; it does not grade code quality.
+
+Eight achievements show completed and locked states: First Steps, Bookworm,
+First Solution, Problem Solver, Perfect Score, Pointer Master, Level Five and
+CodeQuest Champion. They are calculated from saved milestones and do not
+require repeated claims or introduce extra XP farming.
+
+### Existing progress file compatibility
+
+The original `CQ2!` save file (`codequest_progress.dat`) automatically migrates
+to the current `CQ4!` format when the updated application saves. Previously earned
+XP, completed lessons/labs, mastered quiz questions and quiz statistics are
+preserved. Existing earned XP becomes available as the initial spendable
+balance. New bonuses are awarded at most once, using persistent flags.
+
+**Back up `codequest_progress.dat` before opening this edition** if you intend
+to switch back to an older CodeQuest build: older programs may not understand
+the new CQ4 format. The theme `.cfg` file is unchanged.
+
+## Debug the Code XP and achievements
+
+The **Practice quizzes > Debug the Code** activity now participates in the same XP system as the regular quizzes. It awards **20 XP** the first time each of the 12 debugging challenges is answered correctly, **50 XP** for the first completed debugging session scoring at least 70%, and **25 XP** for the first perfect debugging session. A failed attempt can be retried; mastered fixes and bonuses cannot be farmed repeatedly. All awards increase both total XP (for levels/ranks) and available XP (for extra lab hints).
+
+The **Bug Hunter** achievement unlocks when all 12 debugging fixes have been mastered, including over multiple sessions. The Debug the Code page displays mastered progress and session XP; the Progress page displays the achievement and XP rules.
+
+The save format is **CQ4**. Existing **CQ2/CQ3** progress is read and migrated without resetting the original XP, ranks, quiz and lab completion, or purchased hints. **Back up `codequest_progress.dat` before opening the updated version**: older builds will not read a CQ4 save. The uploaded ZIP's original progress file is not redistributed in the updated package.
+
+
+### Correct-answer celebration
+Correct answers in track quizzes and **Debug the Code** trigger a brief,
+non-blocking confetti burst and a soft, original three-note success chime.
+The sound is synthesized in C at startup and played with raylib's audio API;
+no external sound files or extra dependencies are needed. Incorrect answers
+do not trigger a celebration. If no audio device is available, confetti still
+works without sound.

@@ -2,6 +2,8 @@
  * Only content and session state live here; the existing Save format is unchanged.
  */
 #include "debug_challenges.h"
+#include "progress.h"
+#include "celebration.h"
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
@@ -118,6 +120,8 @@ static const DebugChallenge challenges[] = {
     }
 };
 
+_Static_assert(DEBUG_COUNT(challenges) == CQ_DEBUG_COUNT, "Debug save count must match challenge list");
+
 static Color DBG_WHITE={239,244,255,255};
 static Color DBG_MUTED={151,165,190,255};
 static Color DBG_PURPLE={141,111,255,255};
@@ -151,6 +155,8 @@ static void updateDebugTheme(int light){
 
 static int current=0, picked=-1, submitted=0, attempts=0, correctAnswers=0, finished=0;
 static unsigned char missed[DEBUG_COUNT(challenges)]={0};
+static int sessionXP=0;
+static int lastFixAwarded=0;
 
 static Color faded(Color c, unsigned char opacity){c.a=opacity;return c;}
 static void label(const DebugChallengeView *v,const char *text,float x,float y,int size,Color color){
@@ -226,7 +232,7 @@ static float codeBlock(const DebugChallengeView *v,const char *code,float x,floa
     return height;
 }
 static void resetSession(const DebugChallengeView *v){
-    current=0;picked=-1;submitted=0;attempts=0;correctAnswers=0;finished=0;
+    current=0;picked=-1;submitted=0;attempts=0;correctAnswers=0;finished=0;sessionXP=0;lastFixAwarded=0;
     memset(missed,0,sizeof(missed));
     if(v->scrollPosition)*v->scrollPosition=0;
 }
@@ -237,14 +243,17 @@ void DrawDebugChallenges(const DebugChallengeView *v,float *bottom){
     if(finished){
         label(v,"Debugging session complete",x,y,29,DBG_WHITE);y+=48;
         label(v,"Review your results and try again to reinforce the concepts.",x,y,15,DBG_MUTED);y+=52;
-        rectangle(x,y,w,195,DBG_PANEL);
+        rectangle(x,y,w,226,DBG_PANEL);
         label(v,"YOUR RESULT",x+25,y+25,13,DBG_PURPLE);
         char summary[120];snprintf(summary,sizeof(summary),"%d / %d correct",correctAnswers,DEBUG_COUNT(challenges));
         label(v,summary,x+25,y+57,36,DBG_WHITE);
         snprintf(summary,sizeof(summary),"Accuracy: %d%%",100*correctAnswers/DEBUG_COUNT(challenges));
         label(v,summary,x+25,y+113,21,DBG_GREEN);
-        label(v,"Results are for this session only; your saved quiz progress is unchanged.",x+25,y+158,13,DBG_MUTED);
-        y+=225;
+        snprintf(summary,sizeof(summary),"+%d XP earned this session  |  %d / %d fixes mastered",
+                 sessionXP,cqDebugMastered(),CQ_DEBUG_COUNT);
+        label(v,summary,x+25,y+153,15,DBG_GREEN);
+        label(v,"XP and mastered fixes are saved; retrying only awards new milestones.",x+25,y+188,13,DBG_MUTED);
+        y+=256;
         label(v,"Questions to review",x,y,22,DBG_WHITE);y+=44;
         int found=0;
         for(int i=0;i<DEBUG_COUNT(challenges);i++){
@@ -260,7 +269,11 @@ void DrawDebugChallenges(const DebugChallengeView *v,float *bottom){
     }
     const DebugChallenge *q=&challenges[current];
     label(v,"Debug the Code",x,y,29,DBG_WHITE);y+=45;
-    label(v,"Read the buggy code, choose the best fix, then learn why it works.",x,y,15,DBG_MUTED);y+=37;
+    label(v,"Read the buggy code, choose the best fix, then learn why it works.",x,y,15,DBG_MUTED);y+=30;
+    char xpInfo[180];
+    snprintf(xpInfo,sizeof(xpInfo),"%d / %d mastered  |  +20 XP per new fix  |  +50 first pass  |  +25 first perfect",
+             cqDebugMastered(),CQ_DEBUG_COUNT);
+    label(v,xpInfo,x,y,13,DBG_GREEN);y+=34;
     char counter[100];snprintf(counter,sizeof(counter),"CHALLENGE %d OF %d",current+1,DEBUG_COUNT(challenges));
     label(v,counter,x,y,13,DBG_PURPLE);
     float barX=x+185,barWidth=w-185;
@@ -290,8 +303,13 @@ void DrawDebugChallenges(const DebugChallengeView *v,float *bottom){
         label(v,"Select an answer to check your fix.",x,y+11,14,DBG_MUTED);
         if(picked>=0 && button(v,"Check my fix",x+w-182,y,182,48,DBG_PURPLE,1)){
             submitted=1;attempts++;
-            if(picked==q->correct)correctAnswers++;
-            else missed[current]=1;
+            if(picked==q->correct){
+                celebrationCorrect(x+w*0.5f,y-v->scroll-75.0f);
+                correctAnswers++;
+                lastFixAwarded=rewardDebugFix(current);
+                if(lastFixAwarded)sessionXP+=CQ_XP_DEBUG_FIX;
+            }
+            else { missed[current]=1;lastFixAwarded=0; }
         } else if(picked<0)button(v,"Choose a fix first",x+w-182,y,182,48,DBG_MUTED,0);
         y+=77;
     }else{
@@ -299,12 +317,21 @@ void DrawDebugChallenges(const DebugChallengeView *v,float *bottom){
         float feedbackTop=y;
         rectangle(x,y,w,135,faded(right?DBG_GREEN:DBG_ORANGE,29));
         label(v,right?"Correct - you found the fix!":"Not quite - here's the correct fix:",x+18,y+16,18,right?DBG_GREEN:DBG_ORANGE);
-        float explanationEnd=wrapped(v,q->explanation,x+19,y+49,w-43,15,DBG_WHITE);
+        if(right){
+            label(v,lastFixAwarded ? "+20 XP - first correct fix!" :
+                  "Already mastered - no repeat XP.",x+19,y+43,12,DBG_GREEN);
+        }
+        float explanationEnd=wrapped(v,q->explanation,x+19,y+(right?66:49),w-43,15,DBG_WHITE);
         y=fmaxf(feedbackTop+151,explanationEnd+23);
         y+=codeBlock(v,q->fixed,x,y,w,DBG_GREEN,"CORRECTED CODE");y+=24;
         const char *action=current==DEBUG_COUNT(challenges)-1?"See results  >":"Next challenge  >";
         if(button(v,action,x,y,205,49,DBG_PURPLE,1)){
-            if(current==DEBUG_COUNT(challenges)-1)finished=1;
+            if(current==DEBUG_COUNT(challenges)-1){
+                int before=progress.xp;
+                rewardDebugSession(correctAnswers,DEBUG_COUNT(challenges));
+                sessionXP+=progress.xp-before;
+                finished=1;
+            }
             else current++;
             picked=-1;submitted=0;
             if(v->scrollPosition)*v->scrollPosition=0;

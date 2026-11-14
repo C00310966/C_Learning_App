@@ -24,6 +24,8 @@
         "src/quizzes.c",
         "src/exercises.c",
         "src/lab_runner.c",
+        "src/debug_challenges.c",
+        "src/celebration.c",
         "-o",
         "bin/CodeQuest.exe",
         "-L${config:codequest.raylibLib}",
