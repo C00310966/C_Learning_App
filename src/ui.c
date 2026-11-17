@@ -9,6 +9,7 @@
 #include "lab_runner.h"
 #include "debug_challenges.h"
 #include "celebration.h"
+#include "exam_simulator.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -67,6 +68,7 @@ static int quizTrack=-1, quizPosition=0, quizCount=0;
 static int quizQuestionIds[30], quizSelections[30];
 static int quizChoice=-1, quizAnswered=0, quizFinished=0;
 static int debugMode=0;
+static int examMode=0;
 
 static float scroll=0, maxScroll=0;
 static int windowW=1380,windowH=850;
@@ -254,7 +256,7 @@ static const char *extraLabHints[24]={
  "std::list::splice transfers nodes, so verify that the source list becomes empty after the move.",
  "Read each word into a std::string, then use counts[word]++ to update the map."
 };
-static void nav(int s){if(labLoaded>=0)labSaveDraft(labLoaded,labCode);labFocus=0;screen=s;selectedLesson=-1;selectedLab=-1;scroll=0;searchActive=0;if(s==2){quizTrack=-1;quizFinished=0;}}
+static void nav(int s){if(examMode&&!ExamIsFinished()&&s!=2)return;if(examMode&&s!=2){ExamLeave();examMode=0;}if(labLoaded>=0)labSaveDraft(labLoaded,labCode);labFocus=0;screen=s;selectedLesson=-1;selectedLab=-1;scroll=0;searchActive=0;if(s==2){quizTrack=-1;quizFinished=0;}}
 static int contains(const char*s,const char*term){if(!term[0])return 1;char a[1100],b[100];snprintf(a,sizeof(a),"%s",s);snprintf(b,sizeof(b),"%s",term);for(char*p=a;*p;p++)if(*p>='A'&&*p<='Z')*p+=32;for(char*p=b;*p;p++)if(*p>='A'&&*p<='Z')*p+=32;return strstr(a,b)!=NULL;}
 static void startQuiz(int track){
  if(track<0 || track>=COUNT(tracks))return;
@@ -1130,6 +1132,17 @@ static void quizMenu(float x,float w,float *bottom){
  tx("PRACTICE  /  CHALLENGE ROOM",rx,y,12,CQ_PURPLE);y+=29;
  txH("Test what you've learned",rx,y,31,CQ_WHITE);y+=48;
  tx("Choose a topic, answer each question and review what you can improve.",rx,y,15,CQ_MUTED);y+=51;
+ box(rx,y,rw,115,.11f,alpha(CQ_PURPLE,.11f));
+ border(rx,y,rw,115,.11f,alpha(CQ_PURPLE,.36f));
+ tx("NEW  /  60-MINUTE CODING EXAM",rx+20,y+13,12,CQ_PURPLE);
+ txH("Exam Simulator",rx+20,y+37,22,CQ_WHITE);
+ tx("5 written coding problems  /  pointers and linked lists",rx+20,y+74,14,CQ_MUTED);
+ if(rw>=675){
+  if(btn("Start exam  >",rx+rw-179,y+33,157,46,CQ_PURPLE,1)){
+   ExamStart();examMode=1;scroll=0;return;
+  }
+ }else if(hit(RR(rx,y,rw,115))){ExamStart();examMode=1;scroll=0;return;}
+ y+=136;
  box(rx,y,rw,102,.11f,alpha(CQ_ORANGE,.10f));
  border(rx,y,rw,102,.11f,alpha(CQ_ORANGE,.32f));
  tx("DEBUG THE CODE",rx+20,y+17,12,CQ_ORANGE);
@@ -1228,6 +1241,17 @@ static void quizSummary(float x,float w,float *bottom){
  *bottom=y+104;
 }
 static void quizView(float x,float w,float *bottom){
+ if(examMode){
+  if(!ExamIsRunning()){examMode=0;scroll=0;}
+  else{
+   ExamStyle style={.x=x,.width=w,.scroll=scroll,.mouse=pointer(),
+    .font=font,.headingFont=headingFont,.codeFont=codeFont,
+    .panel=PANEL,.card=CARD,.text=CQ_WHITE,.muted=CQ_MUTED,.line=CQ_LINE,
+    .accent=CQ_PURPLE,.green=CQ_GREEN,.orange=CQ_ORANGE,.background=BG,
+    .accentText=textOnAccent};
+   ExamDraw(&style,bottom);return;
+  }
+ }
  if(debugMode){
   if(btn("< All quizzes",x,96,162,40,CQ_PURPLE,0)){debugMode=0;scroll=0;return;}
   DebugChallengeView v={.x=x,.width=w,.font=font,.mouse=pointer(),
@@ -1945,7 +1969,8 @@ void RunApp(void){
   uiScale=computeScale(physicalW,physicalH);
   windowW=(int)(physicalW/uiScale);windowH=(int)(physicalH/uiScale);
   SetMouseCursor(MOUSE_CURSOR_DEFAULT);
-  if(IsKeyPressed(KEY_ESCAPE)){if(screen==2&&debugMode){debugMode=0;scroll=0;}else if(screen==2&&quizTrack>=0){quizTrack=-1;quizFinished=0;scroll=0;}else if(selectedLesson>=0){selectedLesson=-1;scroll=0;}else if(selectedLab>=0){labSaveDraft(selectedLab,labCode);selectedLab=-1;labFocus=0;scroll=0;}else if(screen)nav(0);}
+  if(IsKeyPressed(KEY_ESCAPE)&&!ExamTimeoutPopupVisible()){if(screen==2&&examMode){/* Exit only via exam review so answers are not lost. */}else if(screen==2&&debugMode){debugMode=0;scroll=0;}else if(screen==2&&quizTrack>=0){quizTrack=-1;quizFinished=0;scroll=0;}else if(selectedLesson>=0){selectedLesson=-1;scroll=0;}else if(selectedLab>=0){labSaveDraft(selectedLab,labCode);selectedLab=-1;labFocus=0;scroll=0;}else if(screen)nav(0);}
+  if(examMode)ExamUpdate();
   /* Navigation rail can be expanded or collapsed without affecting scroll state. */
   float side=navCollapsed?76.0f:204.0f;
   float x=side+32,w=windowW-side-66;if(w<450)w=450;
@@ -1957,7 +1982,7 @@ void RunApp(void){
   hoverFrame++;
   /* React to destination/detail changes, including direct chapter shortcuts. */
   int pageSignature=(screen+1)*100000+(selectedLesson+1)*200+(selectedLab+1)*2;
-  pageSignature+=screen==2?(quizTrack+2)*41+(debugMode?31:0):0;
+  pageSignature+=screen==2?(quizTrack+2)*41+(debugMode?31:0)+(examMode?67:0):0;
   if(lastPageSignature<0)lastPageSignature=pageSignature;
   if(pageSignature!=lastPageSignature){pageReveal=.62f;lastPageSignature=pageSignature;}
   pageReveal=fmaxf(0.0f,pageReveal-GetFrameTime()*4.8f);
@@ -2017,6 +2042,12 @@ void RunApp(void){
    * always float above Home, lessons, quizzes and lab panels. */
   BeginMode2D(fixedCamera);
   drawNavTooltipOverlay();
+  if(examMode&&ExamTimeoutPopupVisible()){
+   ExamStyle style={.mouse=pointer(),.font=font,.headingFont=headingFont,
+    .panel=PANEL,.text=CQ_WHITE,.muted=CQ_MUTED,.orange=CQ_ORANGE,
+    .accent=CQ_PURPLE,.accentText=textOnAccent};
+   ExamDrawTimeoutPopup(&style,windowW,windowH);
+  }
   EndMode2D();
   EndDrawing();
  }
