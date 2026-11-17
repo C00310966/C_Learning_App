@@ -234,3 +234,49 @@ The sound is synthesized in C at startup and played with raylib's audio API;
 no external sound files or extra dependencies are needed. Incorrect answers
 do not trigger a celebration. If no audio device is available, confetti still
 works without sound.
+
+## UI redesign notes (Stages 1–4.1)
+
+This is the single reference for the staged visual redesign; new stage-specific
+Markdown files are not necessary.
+
+- **Stage 1:** Home workspace, next unfinished lesson, compact activity counts, and developer profile.
+- **Stage 2:** Five-destination collapsible sidebar, keyboard shortcuts, and profile/theme footer.
+- **Stages 2.1–2.2:** Cohesive vector navigation icons and tooltips drawn above page content.
+- **Stage 3:** Revised theme colours, spacing, heading hierarchy, and code font treatment.
+- **Stage 4:** Interactive course path, track selection, chapter shortcuts, saved progress states.
+- **Stage 4.1:** Renamed Learning Atlas to **Your learning path**, reduced unused vertical whitespace,
+  centred custom vector track icons with a common stroke system, and tightened track detail spacing.
+
+All tracks remain freely navigable and progress is read from the existing save data.
+
+### Learning path icon refinement (Stage 4.2)
+
+- Improved the Pointers milestone with a clean vector cursor symbol.
+- Replaced the cramped C++ line drawing with a centred `C++` wordmark using the existing heading font.
+- Kept the other three milestones, navigation, lesson progress, and learning path interactions unchanged.
+
+## UI redesign — Stage 5 (lessons and quizzes)
+
+- **Lessons:** A centred reading column with a handbook-style chapter heading, track and completion tags, a clearer content hierarchy, consistent walkthrough blocks, and differentiated expected-outcome and reminder panels. The original teaching material, examples and XP rules are unchanged. The bottom of each lesson provides a next-lesson shortcut and a topic-quiz shortcut.
+- **Quizzes:** A streamlined challenge selection screen, centred question layout, per-question progress bar, clearer A–D answer options, and styled correct/incorrect explanations. The final results screen uses the same reading width. Debug-the-code remains accessible from the quiz menu.
+- **Compatibility:** No new external assets or dependencies; the design follows both the light and dark themes and keeps the existing sidebar and scrolling behaviour.
+
+## UI redesign — Stage 6 (coding lab workspace)
+
+- Lab detail screens now distinguish assignment instructions, reference tests, a working editor, and the run/verification console.
+- On wide layouts, helpful hints and the optional 100-XP hint appear beside the editor. On narrower windows they stack below the results area.
+- Run Code, Check Solution and Reset Starter retain their original behaviour. Only a successful reference check marks a lab complete and awards its one-time XP.
+- Console feedback keeps the green/red verification glow; running code without checking shows blue, not a false pass state.
+- Draft saving, code selection, editor scroll/repeat keys, the two themes and existing saved progress remain unchanged.
+
+## UI redesign — Stage 6.1 (clean lab layout)
+
+The Stage 6 side-by-side workspace experiment was reverted in `src/ui.c` in favour of the simpler Stage 5 coding lab layout. The full-width editor, existing hints, console status glow, keyboard behaviour, drafts, and solution checking are preserved.
+
+## UI redesign — Stage 7 (developer profile and achievement badges)
+
+- The Progress page now features a compact rank medallion, rank title, current level, next-level XP progress, and available hint XP.
+- Nine achievements are displayed as collectible vector badges. Each has a distinct symbol and accent colour; locked badges remain visible but subdued, and earned badges gain a small check mark.
+- An overall achievement collection meter replaces the old plain count-only presentation.
+- All graphics are drawn in Raylib; there are no new asset files or dependencies. Unlock requirements, XP awards, progress saving, and both themes are unchanged.
