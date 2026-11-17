@@ -280,3 +280,17 @@ The Stage 6 side-by-side workspace experiment was reverted in `src/ui.c` in favo
 - Nine achievements are displayed as collectible vector badges. Each has a distinct symbol and accent colour; locked badges remain visible but subdued, and earned badges gain a small check mark.
 - An overall achievement collection meter replaces the old plain count-only presentation.
 - All graphics are drawn in Raylib; there are no new asset files or dependencies. Unlock requirements, XP awards, progress saving, and both themes are unchanged.
+
+## Daily challenges and XP streak (November 2026)
+
+The Home screen has a compact **Daily Challenge card** linking to a dedicated challenge screen, featuring a rotating selection of quick quizzes, code-output predictions and bug-finding questions. On the dedicated screen, choose an answer and press **Check answer**. Wrong answers can be retried; correct completion earns **25 XP once per local calendar day**, plus a **5 XP bonus per consecutive daily-challenge day**, capped at **25 bonus XP** (maximum 50 XP/day). A day without a completed challenge resets this *daily-challenge* streak; regular study activity does not count towards it. The home card displays the current streak and possible reward.
+
+Daily progress is saved in the existing `codequest_progress.dat` file. The save format is upgraded to **CQ5**, with automatic loading of CQ2, CQ3 and CQ4 files. Keep a backup of the old save if you intend to run an older CodeQuest version again, as older builds cannot read CQ5. Challenges use the computer's local date, so clock changes may affect daily rotation.
+
+### Daily challenge screen and archive
+
+The Home screen now shows a compact Daily Challenge card with the active consecutive-day streak and today's available XP. Select it to open a dedicated challenge screen. Previous daily questions (up to 90 days back) can be chosen from a paged archive for **practice only**, without extra XP or changes to streaks. The previous save format stores only the last completed daily date, not per-date completion history; the archive therefore does not claim earlier attempts were completed.
+
+### Daily challenge single-attempt rule
+
+Today’s challenge permits only one submitted answer. Correct submissions grant the daily XP reward and extend the streak; incorrect submissions award no XP and cannot be retried that day, including after restarting CodeQuest. Previous challenges remain available for practice without XP. The CQ6 save format migrates CQ5 and earlier saves.

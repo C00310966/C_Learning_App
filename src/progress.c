@@ -27,12 +27,46 @@ typedef struct {
     unsigned char trackReward[CQ_TRACKS];
 } CQ3Save;
 
+/* Exact CQ4 payload for backwards-compatible loading after adding daily fields. */
+typedef struct {
+    unsigned char learned[MAX_LESSONS];
+    unsigned char labDone[MAX_LABS];
+    unsigned char quizDone[MAX_QUIZZES];
+    int xp, quizCorrect, quizAttempts, streak, lastDay;
+    int xpWallet;
+    unsigned char extraHint[MAX_LABS];
+    unsigned char quizPassReward[CQ_TRACKS];
+    unsigned char quizPerfectReward[CQ_TRACKS];
+    unsigned char trackReward[CQ_TRACKS];
+    unsigned char debugMastered[CQ_DEBUG_COUNT];
+    unsigned char debugPassReward;
+    unsigned char debugPerfectReward;
+} CQ4Save;
+
+/* CQ5 had only the success-day and streak; preserve exact binary layout when upgrading. */
+typedef struct {
+    unsigned char learned[MAX_LESSONS];
+    unsigned char labDone[MAX_LABS];
+    unsigned char quizDone[MAX_QUIZZES];
+    int xp, quizCorrect, quizAttempts, streak, lastDay;
+    int xpWallet;
+    unsigned char extraHint[MAX_LABS];
+    unsigned char quizPassReward[CQ_TRACKS];
+    unsigned char quizPerfectReward[CQ_TRACKS];
+    unsigned char trackReward[CQ_TRACKS];
+    unsigned char debugMastered[CQ_DEBUG_COUNT];
+    unsigned char debugPassReward;
+    unsigned char debugPerfectReward;
+    int dailyLastDay;
+    int dailyStreak;
+} CQ5Save;
+
 Save progress = {0};
 
 void persist(void) {
     FILE *f = fopen(SAVE_FILE, "wb");
     if (!f) return;
-    if (fwrite("CQ4!", 1, 4, f) != 4 || fwrite(&progress, sizeof(progress), 1, f) != 1) {
+    if (fwrite("CQ6!", 1, 4, f) != 4 || fwrite(&progress, sizeof(progress), 1, f) != 1) {
         /* A failed save is retried on the next normal save. */
     }
     fclose(f);
@@ -43,9 +77,21 @@ void loadProgress(void) {
     if (!f) return;
     char magic[4] = {0};
     if (fread(magic, 1, 4, f) == 4) {
-        if (memcmp(magic, "CQ4!", 4) == 0) {
+        if (memcmp(magic, "CQ6!", 4) == 0) {
             Save loaded = {0};
             if (fread(&loaded, sizeof(loaded), 1, f) == 1) progress = loaded;
+        } else if (memcmp(magic, "CQ5!", 4) == 0) {
+            CQ5Save old = {0};
+            if (fread(&old, sizeof(old), 1, f) == 1) {
+                memcpy(&progress, &old, sizeof(old));
+                /* A prior successful completion must remain locked after migration. */
+                progress.dailyAttemptDay = progress.dailyLastDay;
+                progress.dailyAttemptChoice = -1; /* Unknown in older saves. */
+            }
+        } else if (memcmp(magic, "CQ4!", 4) == 0) {
+            CQ4Save old = {0};
+            if (fread(&old, sizeof(old), 1, f) == 1)
+                memcpy(&progress, &old, sizeof(old));
         } else if (memcmp(magic, "CQ3!", 4) == 0) {
             CQ3Save old = {0};
             if (fread(&old, sizeof(old), 1, f) == 1) {
@@ -71,7 +117,9 @@ void loadProgress(void) {
     fclose(f);
     if (progress.xp < 0 || progress.xp > 100000000 || progress.xpWallet < 0 || progress.xpWallet > 100000000 ||
         progress.xpWallet > progress.xp || progress.quizCorrect < 0 || progress.quizAttempts < 0 ||
-        progress.quizCorrect > progress.quizAttempts) memset(&progress, 0, sizeof(progress));
+        progress.quizCorrect > progress.quizAttempts ||
+        progress.dailyLastDay < 0 || progress.dailyStreak < 0 || progress.dailyStreak > 1000000 ||
+        progress.dailyAttemptDay < 0 || progress.dailyAttemptChoice < -1 || progress.dailyAttemptChoice > 3) memset(&progress, 0, sizeof(progress));
 }
 
 void award(int xp) {
@@ -84,6 +132,55 @@ void award(int xp) {
         progress.lastDay = day;
     }
     persist();
+}
+
+/* Day numbers use the user's local calendar date (not UTC's midnight).
+ * Comparing calendar dates directly avoids DST causing 23/25-hour days. */
+static int daysBeforeYear(int y) {
+    y--;
+    return 365*y + y/4 - y/100 + y/400;
+}
+int cqLocalDay(void) {
+    time_t now = time(NULL);
+    struct tm *lt = localtime(&now);
+    if (!lt) return 0;
+    int y = lt->tm_year + 1900;
+    return daysBeforeYear(y) - daysBeforeYear(1970) + lt->tm_yday + 1;
+}
+int cqDailyActiveStreak(int day) {
+    if (day <= 0 || progress.dailyLastDay <= 0) return 0;
+    if (progress.dailyLastDay == day || progress.dailyLastDay == day-1)
+        return progress.dailyStreak;
+    return 0;
+}
+int cqDailyReward(int day) {
+    if (day <= 0 || progress.dailyLastDay >= day) return 0;
+    int streak = (progress.dailyLastDay == day-1) ? progress.dailyStreak+1 : 1;
+    if (streak > 1000000) streak = 1000000;
+    int bonus = (streak-1) * CQ_XP_DAILY_BONUS_STEP;
+    if (streak > 6 || bonus > CQ_XP_DAILY_MAX_BONUS)
+        bonus = CQ_XP_DAILY_MAX_BONUS;
+    int xp = CQ_XP_DAILY_BASE + bonus;
+    if (progress.xp > INT_MAX-xp || progress.xpWallet > INT_MAX-xp) return 0;
+    progress.dailyLastDay = day;
+    progress.dailyStreak = streak;
+    award(xp); /* Persists progress once, including both streak fields. */
+    return xp;
+}
+
+/* Submit today's one and only attempt. Incorrect answers are persisted too,
+ * preventing retries after leaving the screen or restarting the application. */
+int cqDailySubmit(int day, int answer, int correct) {
+    if (day <= 0 || day != cqLocalDay() || answer < 0 || answer > 3 ||
+        progress.dailyAttemptDay >= day || progress.dailyLastDay >= day) return 0;
+    progress.dailyAttemptDay = day;
+    progress.dailyAttemptChoice = answer;
+    if (correct) {
+        (void)cqDailyReward(day); /* Saves both the attempt and XP in one update. */
+    } else {
+        persist();
+    }
+    return 1;
 }
 
 int spendHint(int labId) {

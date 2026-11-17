@@ -715,6 +715,193 @@ static float drawLearningJourney(float x,float y,float w,int next){
  return y;
 }
 
+/* Daily challenges: deterministic local-day rotation with three activity formats.
+ * Multiple choice uses the app's own answer checking, no compiler required. */
+typedef struct {
+ const char *kind,*title,*prompt;
+ const char *choices[4];
+ int answer;
+ const char *explanation;
+} DailyChallenge;
+static const DailyChallenge dailyChallenges[]={
+ {"QUICK QUIZ","C fundamentals","Which keyword declares a constant-qualified variable in C?",{"const","static","extern","volatile"},0,"const prevents modification through that declaration."},
+ {"PREDICT OUTPUT","Integer arithmetic","What does this print?  printf(\"%d\", 7 / 2);",{"3","3.5","4","2"},0,"Both operands are integers, so division discards the fractional part."},
+ {"FIND THE BUG","Array bounds","An int array has five elements. Which access is out of bounds?",{"arr[4]","arr[0]","arr[2]","arr[5]"},3,"Five elements have indices 0 through 4."},
+ {"QUICK QUIZ","Pointers","What does the & operator obtain when applied to a variable?",{"Its address","Its size","Its value plus one","Its type"},0,"The address-of operator yields a pointer to that variable."},
+ {"PREDICT OUTPUT","Loops","What prints?  for(int i=0;i<3;i++) printf(\"%d\",i);",{"012","123","013","000"},0,"The loop uses i = 0, 1, and 2 before stopping."},
+ {"FIND THE BUG","Strings","Which declaration is too small for the C string \"cat\"?",{"char s[3] = \"cat\";","char s[4] = \"cat\";","char s[8] = \"cat\";","char s[] = \"cat\";"},0,"A null terminator requires four bytes in total."},
+ {"QUICK QUIZ","Dynamic memory","Which standard C function releases memory from malloc?",{"free","delete","release","clear"},0,"free releases dynamically allocated C memory."},
+ {"PREDICT OUTPUT","Increment","What prints?  int a=5; a++; printf(\"%d\",a);",{"6","5","4","10"},0,"The increment expression adds one to a."},
+ {"FIND THE BUG","Pointers","Which action is invalid after free(p), without reallocating?",{"Dereference p","Set p to NULL","Assign a new pointer to p","Leave p unused"},0,"Dereferencing a freed pointer is undefined behaviour."},
+ {"QUICK QUIZ","Linked lists","What usually connects one node to the next in a linked list?",{"A pointer","An array index","A file handle","A loop counter"},0,"A next pointer links a node to the next one."},
+ {"PREDICT OUTPUT","Conditions","What prints?  int x=4; printf(\"%d\", x>5);",{"0","1","4","5"},0,"In C, a false comparison evaluates to integer 0."},
+ {"FIND THE BUG","Loops","Which condition stays true as i increases through nonnegative values?",{"i >= 0","i < 5","i != 3","i < 10"},0,"Increasing i from zero never makes i >= 0 false in the normal range."},
+ {"QUICK QUIZ","Structures","Which operator accesses a struct member through a pointer?",{"->",".","::","&"},0,"The arrow operator accesses a member through a pointer to a struct."},
+ {"PREDICT OUTPUT","Modulo","What prints?  printf(\"%d\", 11 % 4);",{"3","2","4","1"},0,"11 divided by 4 leaves a remainder of 3."},
+ {"FIND THE BUG","Input safety","Which scanf format safely limits a char name[10] string read?",{"%9s","%10s","%s","%11s"},0,"%9s leaves one character for the string's terminating null byte."}
+};
+/* Archive is deliberately practice-only: CQ5 saves have no per-day completion
+ * history, so don't pretend that previously played dates have saved results. */
+static int dailyChoice=-1,dailyFeedback=0,dailyObservedDay=-1;
+static int dailyEarned=0,dailySelectedOffset=0,dailyArchivePage=0;
+static void dailySelectOffset(int offset){
+ if(offset<0)offset=0;
+ if(offset>90)offset=90;
+ if(dailySelectedOffset!=offset){dailySelectedOffset=offset;dailyChoice=-1;dailyFeedback=0;dailyEarned=0;scroll=0;}
+}
+static void dailySync(void){
+ int day=cqLocalDay();
+ if(day!=dailyObservedDay){dailyObservedDay=day;dailySelectedOffset=0;dailyArchivePage=0;dailyChoice=-1;dailyFeedback=0;dailyEarned=0;}
+}
+static int dailyProspectiveXP(int day,int complete){
+ int streak=cqDailyActiveStreak(day);
+ int next=complete?streak:streak+1;
+ int bonus=(next-1)*CQ_XP_DAILY_BONUS_STEP;
+ if(bonus>CQ_XP_DAILY_MAX_BONUS)bonus=CQ_XP_DAILY_MAX_BONUS;
+ return CQ_XP_DAILY_BASE+bonus;
+}
+static float dailyChallengeCard(float x,float y,float w){
+ dailySync();
+ int day=cqLocalDay(),streak=cqDailyActiveStreak(day);
+ int completed=day>0 && progress.dailyLastDay==day;
+ int attempted=day>0 && progress.dailyAttemptDay==day;
+ float h=w>=620?148:190;
+ box(x,y,w,h,.08f,PANEL);
+ border(x,y,w,h,.08f,alpha(CQ_PURPLE,.36f));
+ box(x+19,y+22,4,34,1,CQ_PURPLE);
+ tx("DAILY CHALLENGE",x+33,y+24,12,CQ_PURPLE);
+ char status[120];
+ snprintf(status,sizeof(status),"%d-day streak",streak);
+ txH(status,x+24,y+55,22,CQ_WHITE);
+ if(attempted && !completed)snprintf(status,sizeof(status),"Today's attempt used  /  No XP earned");
+ else snprintf(status,sizeof(status),completed?"Today's challenge complete  /  +%d XP earned":"Today's reward  /  +%d XP possible",dailyProspectiveXP(day,completed));
+ tx(status,x+25,y+92,13,completed?CQ_GREEN:(attempted?CQ_RED:CQ_MUTED));
+ float bw=w>=620?195:210;
+ float bx=w>=620?x+w-bw-20:x+23;
+ float by=w>=620?y+77:y+129;
+ if(btn(completed?"View challenges  >":"Play today's challenge  >",bx,by,bw,40,CQ_PURPLE,1)){
+  dailySelectOffset(0);nav(5);
+ }
+ return y+h+23;
+}
+static void dailyChallengeView(float x,float w,float *bottom){
+ dailySync();
+ int today=cqLocalDay();
+ int selectedDay=today-dailySelectedOffset;
+ int historical=dailySelectedOffset>0;
+ int completed=!historical && today>0 && progress.dailyLastDay==today;
+ int attempted=!historical && today>0 && progress.dailyAttemptDay==today;
+ int locked=attempted || completed || dailyFeedback!=0;
+ int streak=cqDailyActiveStreak(today);
+ const DailyChallenge *q=&dailyChallenges[(selectedDay>0?selectedDay:1)%COUNT(dailyChallenges)];
+ char text[160];
+ float y=100;
+ tx("DAILY PRACTICE",x,y,12,CQ_PURPLE);
+ txH("Daily challenges",x,y+26,30,CQ_WHITE);
+ tx("Build a habit with a short challenge every day.",x,y+73,14,CQ_MUTED);
+ y+=112;
+ float statH=90;
+ box(x,y,w,statH,.08f,PANEL);
+ border(x,y,w,statH,.08f,alpha(CQ_LINE,.6f));
+ snprintf(text,sizeof(text),"%d",streak);
+ txH(text,x+23,y+17,31,CQ_ORANGE);
+ tx("DAY STREAK",x+24,y+59,11,CQ_MUTED);
+ if(attempted && !completed)snprintf(text,sizeof(text),"TODAY'S ATTEMPT USED  /  0 XP");
+ else snprintf(text,sizeof(text),completed?"TODAY COMPLETED  /  %d XP EARNED":"TODAY'S REWARD  /  %d XP",dailyProspectiveXP(today,completed));
+ tx(text,x+(w>=650?210:143),y+36,13,completed?CQ_GREEN:(attempted?CQ_RED:CQ_PURPLE));
+ y+=statH+22;
+ if(btn(historical?"Back to today  >":"Today's challenge",x,y,185,38,CQ_PURPLE,!historical))dailySelectOffset(0);
+ y+=52;
+ float contentW=w>=865?w*.64f:w;
+ float challengeH=contentW>=570?398:460;
+ box(x,y,contentW,challengeH,.075f,PANEL);
+ border(x,y,contentW,challengeH,.075f,alpha(CQ_LINE,.75f));
+ tx(historical?"ARCHIVE / PRACTICE ONLY":"TODAY'S CHALLENGE",x+23,y+20,12,historical?CQ_MUTED:CQ_PURPLE);
+ if(historical){
+  snprintf(text,sizeof(text),"%d day%s ago",dailySelectedOffset,dailySelectedOffset==1?"":"s");
+  tx(text,x+23,y+46,12,CQ_MUTED);
+ }else{
+  tx(completed?"Completed — come back tomorrow":attempted?"Attempt finished — come back tomorrow":"One attempt today — choose carefully",x+23,y+46,12,completed?CQ_GREEN:(attempted?CQ_RED:CQ_MUTED));
+ }
+ txH(q->title,x+23,y+78,24,CQ_WHITE);
+ pill(q->kind,x+23,y+114,historical?CQ_BLUE:CQ_PURPLE);
+ paragraph(q->prompt,x+23,y+156,15,CQ_WHITE,contentW-46);
+ int columns=contentW>=570?2:1;
+ float optionsY=y+208;
+ float ow=(contentW-46-(columns-1)*12)/columns;
+ int rotation=selectedDay>0?(selectedDay/COUNT(dailyChallenges))%4:0;
+ for(int i=0;i<4;i++){
+  int choice=(i+rotation)%4;
+  float ox=x+23+(i%columns)*(ow+12);
+  float oy=optionsY+(i/columns)*(columns==2?50:42);
+  snprintf(text,sizeof(text),"%c   %s",'A'+i,q->choices[choice]);
+  int correctShown=locked && choice==q->answer;
+  int chosenShown=(attempted && progress.dailyAttemptChoice>=0 && progress.dailyAttemptChoice==choice) || dailyChoice==choice;
+  /* Show the original answer, but never allow changing it after submission. */
+  if(btn(text,ox,oy,ow,36,correctShown?CQ_GREEN:(locked && chosenShown && !correctShown?CQ_RED:CQ_PURPLE),chosenShown || correctShown)){
+   if(!locked)dailyChoice=choice;
+  }
+ }
+ float actionY=y+(columns==2?344:403);
+ if(completed){
+  tx("COMPLETED TODAY",x+23,actionY+7,13,CQ_GREEN);
+  paragraph(q->explanation,x+23,actionY+31,12,CQ_MUTED,contentW-46);
+ }else if(attempted){
+  tx("INCORRECT — NO ATTEMPTS REMAIN",x+23,actionY+7,13,CQ_RED);
+  paragraph(q->explanation,x+23,actionY+31,12,CQ_MUTED,contentW-46);
+ }else{
+  if(!locked && btn(historical?"Check practice":"Submit answer",x+23,actionY,154,37,CQ_GREEN,dailyChoice>=0)){
+   int correct=dailyChoice==q->answer;
+   if(historical || cqDailySubmit(today,dailyChoice,correct)){
+    dailyFeedback=correct?1:-1;
+    if(correct){
+     celebrationCorrect(x+23+contentW*.5f,actionY-scroll-50.0f);
+     if(!historical)dailyEarned=dailyProspectiveXP(today,1);
+    }
+   }
+  }
+  if(dailyFeedback==1){
+   tx(historical?"Correct! Practice complete, no XP awarded.":"Correct! Daily reward earned.",x+190,actionY+9,12,CQ_GREEN);
+  }else if(dailyFeedback==-1){
+   tx(historical?"Incorrect — select another date to practise.":"Incorrect — no second attempt today.",x+190,actionY+9,12,CQ_RED);
+  }
+  if(dailyFeedback!=0)paragraph(q->explanation,x+23,actionY+42,12,CQ_MUTED,contentW-46);
+ }
+ y+=challengeH+23;
+ if(w>=865){
+  /* Recent dates sit alongside the featured challenge on wide screens. */
+  float ax=x+contentW+18,aw=w-contentW-18,ay=y-challengeH-23;
+  box(ax,ay,aw,challengeH,.075f,PANEL);
+  border(ax,ay,aw,challengeH,.075f,alpha(CQ_LINE,.65f));
+  txH("Previous challenges",ax+17,ay+19,18,CQ_WHITE);
+  tx("Replay for practice. No XP.",ax+17,ay+48,12,CQ_MUTED);
+  for(int i=0;i<7;i++){
+   int offset=1+dailyArchivePage*7+i;
+   if(offset>90)break;
+   const DailyChallenge *a=&dailyChallenges[(today-offset>0?today-offset:1)%COUNT(dailyChallenges)];
+   snprintf(text,sizeof(text),"%d day%s ago  /  %s",offset,offset==1?"":"s",a->title);
+   if(btn(text,ax+14,ay+81+i*35,aw-28,30,CQ_PURPLE,dailySelectedOffset==offset))dailySelectOffset(offset);
+  }
+  if(dailyArchivePage>0 && btn("< Newer",ax+16,ay+346,98,34,CQ_PURPLE,0))dailyArchivePage--;
+  if(dailyArchivePage<12 && btn("Older >",ax+aw-113,ay+346,98,34,CQ_PURPLE,0))dailyArchivePage++;
+ }else{
+  box(x,y,w,374,.075f,PANEL);
+  txH("Previous challenges",x+17,y+17,20,CQ_WHITE);
+  tx("Practice earlier dates without XP rewards.",x+17,y+45,12,CQ_MUTED);
+  for(int i=0;i<7;i++){
+   int offset=1+dailyArchivePage*7+i;
+   if(offset>90)break;
+   const DailyChallenge *a=&dailyChallenges[(today-offset>0?today-offset:1)%COUNT(dailyChallenges)];
+   snprintf(text,sizeof(text),"%d day%s ago  /  %s",offset,offset==1?"":"s",a->title);
+   if(btn(text,x+14,y+75+i*35,w-28,30,CQ_PURPLE,dailySelectedOffset==offset))dailySelectOffset(offset);
+  }
+  if(dailyArchivePage>0 && btn("< Newer",x+16,y+334,105,32,CQ_PURPLE,0))dailyArchivePage--;
+  if(dailyArchivePage<12 && btn("Older >",x+w-120,y+334,105,32,CQ_PURPLE,0))dailyArchivePage++;
+  y+=394;
+ }
+ *bottom=y+35;
+}
+
 static void overview(float x,float w,float *bottom){
  const int next=homeNextLesson();
  const int lessonCount=totalLearned(),labCount=totalLabs(),quizCount=totalQuizzes();
@@ -785,6 +972,8 @@ static void overview(float x,float w,float *bottom){
   y+=79;
  }
  y+=13;
+ /* One featured, rotating question per local calendar day. */
+ y=dailyChallengeCard(x,y,w);
 
  /* Compact chapter-like activity strip, not three oversized KPI tiles. */
  txH("At a glance",x,y,21,CQ_WHITE);
@@ -1779,7 +1968,7 @@ void RunApp(void){
   Camera2D fixedCamera={.offset={0,0},.target={0,0},.rotation=0,.zoom=uiScale};
   BeginMode2D(fixedCamera);
   sidebar(side);
-  const char *titles[]={"HOME  /  YOUR JOURNEY","LEARN  /  CURRICULUM","PRACTICE  /  QUIZZES","BUILD  /  CODING LABS","PROFILE  /  YOUR PROGRESS"};
+  const char *titles[]={"HOME  /  YOUR JOURNEY","LEARN  /  CURRICULUM","PRACTICE  /  QUIZZES","BUILD  /  CODING LABS","PROFILE  /  YOUR PROGRESS","PRACTICE  /  DAILY CHALLENGES"};
   header(x,w,titles[screen]);
   EndMode2D();
 
@@ -1796,7 +1985,8 @@ void RunApp(void){
   else if(screen==1){if(selectedLesson>=0)lessonView(x,w,&bottom);else learnList(x,w,&bottom);}
   else if(screen==2)quizView(x,w,&bottom);
   else if(screen==3){if(selectedLab>=0)labView(x,w,&bottom);else labList(x,w,&bottom);}
-  else progressView(x,w,&bottom);
+  else if(screen==4)progressView(x,w,&bottom);
+  else dailyChallengeView(x,w,&bottom);
   EndMode2D();
   uiScrollActive=0;
   EndScissorMode();

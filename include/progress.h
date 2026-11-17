@@ -16,6 +16,9 @@
 #define CQ_XP_DEBUG_FIX 20
 #define CQ_XP_DEBUG_PASS 50
 #define CQ_XP_DEBUG_PERFECT 25
+#define CQ_XP_DAILY_BASE 25
+#define CQ_XP_DAILY_BONUS_STEP 5
+#define CQ_XP_DAILY_MAX_BONUS 25
 
 /* CQ4 adds debugging rewards; CQ2 and CQ3 saves are migrated. */
 typedef struct {
@@ -31,6 +34,10 @@ typedef struct {
     unsigned char debugMastered[CQ_DEBUG_COUNT];
     unsigned char debugPassReward;
     unsigned char debugPerfectReward;
+    int dailyLastDay;   /* Local calendar-day serial; separate from general activity streak. */
+    int dailyStreak;
+    int dailyAttemptDay; /* Last attempted local calendar day, even on failure. */
+    int dailyAttemptChoice; /* 0-3, saved for displaying the locked answer. */
 } Save;
 
 extern Save progress;
@@ -43,6 +50,10 @@ void rewardTrack(int track);
 int rewardDebugFix(int challengeId);
 void rewardDebugSession(int score, int count);
 int cqDebugMastered(void);
+int cqLocalDay(void);
+int cqDailyReward(int day); /* Returns XP earned, or zero if already completed today. */
+int cqDailySubmit(int day, int answer, int correct); /* One saved attempt per local day. */
+int cqDailyActiveStreak(int day);
 int cqLevel(void);
 int cqLevelStart(int level);
 int cqLevelNext(void);
