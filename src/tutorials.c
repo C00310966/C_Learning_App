@@ -1,5 +1,34 @@
 #include "curriculum.h"
 /* Additional tutorial chapters written for CodeQuest. */
+/* Conditions & loops: one self-contained example per language construct.
+ * Keep these as separate sections so learners can revisit individual topics. */
+const TutorialSection conditionsLoopTopics[6] = {
+ {"if statements",
+  "Use if when a block should run only if a condition is true. The expression inside parentheses is evaluated first; a zero value is false and a nonzero value is true. Braces make the controlled block explicit. If the condition is false, execution skips the block.",
+  "#include <stdio.h>\n\nint main(void) {\n    int temperature = 32;\n    if (temperature > 30) {\n        printf(\"It is hot\\n\");\n    }\n    return 0;\n}",
+  "Output: It is hot. Because 32 > 30 is true, the printf runs. If temperature were 20, this program would print nothing."},
+ {"else if statements",
+  "Use else if to test a different condition only when the preceding if (and any earlier else if) was false. Conditions are checked top to bottom; only the first matching branch runs. This is useful for grading ranges and classifying values.",
+  "#include <stdio.h>\n\nint main(void) {\n    int score = 75;\n    if (score >= 90) {\n        printf(\"Excellent\\n\");\n    } else if (score >= 60) {\n        printf(\"Pass\\n\");\n    }\n    return 0;\n}",
+  "Output: Pass. The first comparison fails, but 75 >= 60 is true. The remaining branches (if any) are skipped once a branch matches."},
+ {"else statements",
+  "Use else as the fallback when none of the preceding conditions in the same if chain was true. It has no condition of its own. You can use if/else for two outcomes, or put else after one or more else if branches.",
+  "#include <stdio.h>\n\nint main(void) {\n    int number = 7;\n    if (number % 2 == 0) {\n        printf(\"Even\\n\");\n    } else {\n        printf(\"Odd\\n\");\n    }\n    return 0;\n}",
+  "Output: Odd. The remainder of 7 divided by 2 is 1, so the condition is false and the else block runs."},
+ {"for loops",
+  "A for loop is useful when you know how to initialise a counter, when to stop, and how to update it. The three parts are initialisation (once), condition (before each iteration), and update (after each iteration). The condition can be false immediately, producing zero iterations.",
+  "#include <stdio.h>\n\nint main(void) {\n    for (int i = 1; i <= 3; i++) {\n        printf(\"%d\\n\", i);\n    }\n    return 0;\n}",
+  "Output: 1, 2, 3 on separate lines. i begins at 1; the body runs while i <= 3, and i++ increments after each pass."},
+ {"while loops",
+  "A while loop checks its condition BEFORE every iteration. Use it when repetition depends on a changing condition rather than a predetermined number of passes. Update the controlling value inside the loop; otherwise the condition could remain true indefinitely.",
+  "#include <stdio.h>\n\nint main(void) {\n    int count = 3;\n    while (count > 0) {\n        printf(\"%d\\n\", count);\n        count--;\n    }\n    return 0;\n}",
+  "Output: 3, 2, 1 on separate lines. Once count becomes 0, the next condition check fails and the loop ends. A while loop may execute zero times."},
+ {"do while loops",
+  "A do while loop checks its condition AFTER running the body, so the body always executes at least once. It suits actions that must happen before deciding whether to repeat, such as asking for input. Unlike while, a semicolon is required after the closing while condition.",
+  "#include <stdio.h>\n\nint main(void) {\n    int attempts = 0;\n    do {\n        attempts++;\n        printf(\"Attempt %d\\n\", attempts);\n    } while (attempts < 2);\n    return 0;\n}",
+  "Output: Attempt 1 and Attempt 2 on separate lines. The body would still run once if the condition were false on its first check."}
+};
+
 const TutorialChapter tutorialChapters[24] = {
     { {
         {"Understand the program structure", "A source file is compiled before it can run. #include <stdio.h> exposes the declaration of printf, main is the entry point, and a statement normally ends in a semicolon. Braces group the statements that belong to a function.", "#include <stdio.h>\nint main(void) {\n    printf(\"Welcome!\\n\");\n    return 0;\n}", "Output: Welcome! The \\n escape moves the cursor to a new line. Compile with gcc -std=c11 -Wall -Wextra main.c -o program."},
@@ -97,4 +126,104 @@ const TutorialChapter tutorialChapters[24] = {
         {"Time complexity as a guide", "Big-O describes how the work grows as input size increases. Sequential search is O(n). Binary search on a sorted random-access sequence is O(log n), and indexing a vector is O(1).", "#include <algorithm>\n#include <vector>\nstd::vector<int> v{8, 2, 5};\nstd::sort(v.begin(), v.end());\nbool found = std::binary_search(v.begin(),v.end(),5);", "The sorted vector is {2,5,8}, and found is true. Sorting itself costs O(n log n) comparisons in typical standard-library implementations."},
         {"Match algorithms to iterators", "std::sort needs random-access iterators, so it works for vector but not list. A list supplies its own sort member. map supports key lookup without a linear scan.", "std::list<int> items{4, 1, 3};\nitems.sort();\n// Don't call std::sort on list iterators.", "Choose a container by expected access and insertion patterns, and consider iterator invalidation before retaining addresses of elements."},
     } },
+};
+
+/* Core topics: short, separately explained concepts before the longer worked examples. */
+const TutorialChapter coreTopics[24] = {
+    { {
+        {"The parts of a C program", "The include directive brings in declarations from a header. main is where execution begins. Curly braces delimit a block, while semicolons terminate statements. Read a program from the top, but remember execution begins at main.", "#include <stdio.h>\nint main(void) {\n    puts(\"Hello, C!\");\n    return 0;\n}", "Prints Hello, C! followed by a newline. puts comes from stdio.h; return 0 indicates success."},
+        {"Compile, run, and change", "A source file is plain text, not an executable. Compile it, run the result, then change one line and rebuild. The compiler reports syntax and type problems; warnings can reveal mistakes even when the program builds.", "gcc -std=c11 -Wall -Wextra hello.c -o hello\n./hello", "On Windows, run hello.exe instead of ./hello. If you alter the source, compile again to see the change."},
+    } }, /* 0 */
+    { {
+        {"Declaring and initialising values", "Every variable has a type and a name. An initialiser gives the variable a known starting value. int handles whole numbers, double holds approximate decimal values, and char holds a character code.", "int lives = 3;\ndouble price = 2.50;\nchar grade = 'A';", "lives starts at 3, price at 2.5, and grade contains the character A. Use these values only after they are initialised."},
+        {"Printing and calculating", "printf uses format specifiers that must match the argument types: %d for int, %f for double and %c for char. Integer division discards fractions; convert one operand to double to keep them.", "int a = 7, b = 2;\nprintf(\"%d %.1f\\n\", a / b, (double)a / b);", "Prints 3 3.5. The first operation is integer division; the cast makes the second floating-point division."},
+    } }, /* 1 */
+    { {
+        {"", "", "", ""},
+        {"", "", "", ""},
+    } }, /* 2 */
+    { {
+        {"Defining and calling a function", "A function has a return type, name, parameter list and body. A call supplies arguments and executes the function. Give functions a specific job instead of repeating the same steps in multiple places.", "int double_it(int value) { return value * 2; }\nint answer = double_it(6);", "answer is 12. The argument 6 is copied into the parameter value."},
+        {"Return values versus pointer parameters", "A return statement sends a value back to the caller. Ordinary parameters are copies, so assigning to them does not change the original variable. A pointer parameter can deliberately modify caller-owned state.", "void reset(int *p) { *p = 0; }\nint score = 9;\nreset(&score);", "score becomes 0. &score passes its address and *p writes through the pointer."},
+    } }, /* 3 */
+    { {
+        {"Indexing an array safely", "An array contains elements of one type in contiguous positions. Indexing begins at zero. For n elements, valid indexes run from 0 through n-1, so use i < n, not i <= n.", "int scores[] = {4, 8, 12};\nprintf(\"%d\\n\", scores[1]);", "Prints 8. scores[3] would be outside the array and must not be accessed."},
+        {"Strings are character arrays", "A C string finishes with a null character, written \\0. Leave room for it in the array. Functions such as strlen count visible characters but do not count the terminator.", "#include <string.h>\nchar word[] = \"cat\";\nprintf(\"%zu\\n\", strlen(word));", "Prints 3. The array actually has four bytes: c, a, t and the null terminator."},
+    } }, /* 4 */
+    { {
+        {"Rows, columns and indexes", "For int grid[2][3], the first index is the row and the second is the column. Rows are numbered 0 and 1, columns 0 through 2. Always check both dimensions.", "int grid[2][3] = {{1,2,3},{4,5,6}};\nprintf(\"%d\\n\", grid[1][2]);", "Prints 6, the last value in the second row."},
+        {"Traversing a grid", "Use one loop for rows and an inner loop for columns. The inner loop runs all its iterations for each outer-loop iteration. Trace the row and column values when debugging.", "for (int r=0; r<2; ++r) {\n    for (int c=0; c<3; ++c)\n        printf(\"(%d,%d) \",r,c);\n    putchar('\\n');\n}", "Prints coordinates (0,0) through (1,2), with one row per line."},
+    } }, /* 5 */
+    { {
+        {"Addresses and dereferencing", "A pointer stores an address, not a copy of the pointed-to value. & obtains an address; * follows a valid pointer to read or change the value there. Initialise pointers before using them.", "int n = 5;\nint *p = &n;\n*p = 8;\nprintf(\"%d\\n\",n);", "Prints 8: changing *p also changes n because both names refer to the same object."},
+        {"NULL and pointer safety", "NULL expresses that a C pointer does not currently point to an object. Check before dereferencing. A pointer can also become invalid when the pointed-to object ends its lifetime.", "int *p = NULL;\nif (p != NULL)\n    printf(\"%d\\n\", *p);", "Prints nothing. Dereferencing NULL or a dangling pointer is undefined behaviour."},
+    } }, /* 6 */
+    { {
+        {"Passing an address into a function", "C passes all function arguments by value. Passing a pointer copies an address, so the function can use that address to access the caller's object.", "void add_one(int *value) { ++*value; }\nint n=4;\nadd_one(&n);", "n becomes 5. The pointer parameter enables an intentional change to the original n."},
+        {"Swapping two caller-owned values", "To swap two integers, keep one value in a temporary variable and write through two valid pointers. Check how the caller provides each address.", "void swap(int *a,int *b) {\n    int temp=*a; *a=*b; *b=temp;\n}\nint x=2,y=9; swap(&x,&y);", "After the call, x is 9 and y is 2. Swapping local copies would not change them."},
+    } }, /* 7 */
+    { {
+        {"Pointer arithmetic counts elements", "When p points into an array, p+1 means the next element, not necessarily the next byte. The element type determines the distance.", "int a[]={10,20,30};\nint *p=a;\nprintf(\"%d\\n\",*(p+2));", "Prints 30, the same element as a[2]. Keep pointer arithmetic within the array or one past its end."},
+        {"Walking an array with pointers", "A pointer can act as an iterator. Compare against a one-past-the-end pointer, but never dereference that end position.", "int a[]={3,6,9};\nfor(int *p=a;p<a+3;++p)\n    printf(\"%d \",*p);", "Prints 3 6 9. The loop stops before p reaches a+3 as a dereference."},
+    } }, /* 8 */
+    { {
+        {"Finding the end of a C string", "A C string ends at the first \\0 byte. A pointer walker increments one char at a time, and should never read beyond the terminator.", "const char *p=\"hello\";\nwhile(*p != '\\0') ++p;", "p now points to the null terminator after the five visible letters."},
+        {"Copying without exceeding capacity", "A destination buffer must hold all visible characters plus one null terminator. When writing string-processing helpers, track the destination capacity separately.", "char dst[6];\nconst char *src=\"hello\";\nmemcpy(dst,src,6); /* includes \\0 */", "dst contains \"hello\". Include <string.h>; copying into char dst[5] would not leave room for the terminator."},
+    } }, /* 9 */
+    { {
+        {"Scope and lifetime", "Local automatic variables are typically created when execution enters their block and cease to exist when it exits. A pointer to an expired local variable must never be dereferenced.", "int x=5;\n{ int y=10; x+=y; }\nprintf(\"%d\\n\",x);", "Prints 15. y no longer exists outside the inner braces."},
+        {"Allocating and releasing memory", "malloc allocates bytes and returns a pointer or NULL. Check for failure before using it, and release every successful allocation with free exactly once.", "#include <stdlib.h>\nint *p=malloc(sizeof *p);\nif(p) { *p=42; free(p); p=NULL; }", "If allocation succeeds, the integer is written and the allocation is released. p is set to NULL to avoid using a dangling address."},
+    } }, /* 10 */
+    { {
+        {"C allocation versus C++ ownership", "C uses malloc/free. C++ new/delete is different and must not be mixed with malloc/free. For ordinary dynamic sequences in C++, std::vector usually avoids manual ownership.", "/* C */\nint *a=malloc(3*sizeof *a);\nif(a) free(a);", "Include <stdlib.h> in C. Every allocation must be paired with the appropriate deallocation mechanism."},
+        {"Array allocation and cleanup", "When allocating several elements, calculate the total size using sizeof *pointer so the calculation stays correct if the element type changes.", "#include <stdlib.h>\nsize_t count=4;\nint *a=malloc(count*sizeof *a);\nif(a) { a[0]=7; free(a); }", "The buffer has room for four int elements if malloc succeeds; all storage is returned by free."},
+    } }, /* 11 */
+    { {
+        {"Representing a node", "A singly linked node contains data and a pointer to the next node. The last node's next pointer is NULL. Nodes are connected by addresses, not necessarily stored together.", "typedef struct Node {\n    int value;\n    struct Node *next;\n} Node;\nNode first={10,NULL};", "first contains 10 and has no successor. Include <stddef.h> for NULL when needed."},
+        {"Following the links", "Traversal keeps a cursor separate from the head. At each step, read the current node then move to next. The loop stops at NULL.", "for(Node *cur=head;cur!=NULL;cur=cur->next)\n    printf(\"%d \",cur->value);", "Each node value is visited once. The loop also handles an empty list when head is NULL."},
+    } }, /* 12 */
+    { {
+        {"Prepending changes the head", "To add a node at the front, make its next point to the current head, then update head. Both operations are essential, and an empty list works automatically.", "node->next=head;\nhead=node;", "The newly inserted node becomes the first node; the old list stays connected behind it."},
+        {"Changing the caller's head", "When an insertion helper must update the caller's head, accept a pointer-to-pointer in C. The extra * means the function can assign the original pointer.", "void prepend(Node **head,Node *n) {\n    n->next=*head;\n    *head=n;\n}", "Call prepend(&head,newNode). The caller's head now points at newNode."},
+    } }, /* 13 */
+    { {
+        {"Appending to an empty list", "In an empty list, the new node becomes the head. For a nonempty list, traverse until the last node and attach the new node after it.", "node->next=NULL;\nif(head==NULL) head=node;\nelse { /* find tail then set tail->next=node */ }", "The last node always points to NULL. Forgetting this can break traversal."},
+        {"Why a tail pointer helps", "Without a tail pointer, appending requires a walk through n nodes (O(n)). Keeping a current tail lets you append in O(1), provided every insertion and removal updates it.", "tail->next=node;\ntail=node;\ntail->next=NULL;", "The new node is the tail. This snippet assumes tail was non-NULL; handle empty lists separately."},
+    } }, /* 14 */
+    { {
+        {"Remove a node safely", "Before freeing a removed node, reconnect the surrounding links. If deleting the head, update head to its successor. Never read fields from a freed node.", "Node *old=head;\nif(old) { head=old->next; free(old); }", "After a successful head removal, the list starts at its former second node. Only free dynamically allocated nodes."},
+        {"Separate the head from a traversal cursor", "Searching and deleting are easier when you keep prev and current pointers. The cursor advances until it finds the target or reaches NULL.", "Node *prev=NULL,*cur=head;\nwhile(cur && cur->value!=target) {\n    prev=cur; cur=cur->next;\n}", "cur is the matching node or NULL; prev points to the node immediately before it when a match is not at the head."},
+    } }, /* 15 */
+    { {
+        {"Two directions, two links", "A doubly linked node has prev and next links. Every insertion must update each affected neighbour, so moving forward and backward visits consistent sequences.", "typedef struct DNode {\n    int value;\n    struct DNode *prev,*next;\n} DNode;", "Head->prev should be NULL and tail->next should be NULL. Missing one link update can break reverse traversal."},
+        {"Insert between neighbours", "To insert between left and right, connect the new node to both neighbours first, then update the neighbours to point back. Endpoints need separate head/tail handling.", "n->prev=left; n->next=right;\nif(left) left->next=n;\nif(right) right->prev=n;", "The local links are consistent after insertion. If left or right is NULL, update the list head or tail too."},
+    } }, /* 16 */
+    { {
+        {"Class interface and access control", "A C++ class groups data and functions. private data helps protect invariants; public methods define how callers interact with objects. A struct defaults to public, while a class defaults to private.", "class Counter {\n    int value=0;\npublic:\n    void add() { ++value; }\n    int get() const { return value; }\n};", "The user can call add and get, but cannot directly assign to value. Compile this example as C++."},
+        {"Constructors establish valid state", "A constructor runs when an object is created. Use its member initialiser list to initialise members, and mark read-only accessors const when appropriate.", "class Score {\n    int points;\npublic:\n    explicit Score(int p):points(p) {}\n    int get() const { return points; }\n};", "Score s(7); creates an object whose get() returns 7. This is C++ syntax."},
+    } }, /* 17 */
+    { {
+        {"Function templates", "A C++ template lets you describe an operation once for many types. The type must support every operation used in the function body.", "template <typename T>\nT twice(T x) { return x+x; }\nint a=twice(3);\ndouble b=twice(1.25);", "a is 6 and b is 2.5. The compiler generates suitable versions when used."},
+        {"Class templates", "A class template makes its stored type a parameter. A single class definition can become several distinct types, such as Box<int> and Box<double>.", "template <typename T>\nstruct Box { T value; };\nBox<int> a{10};\nBox<double> b{2.5};", "a.value is an int containing 10; b.value is a double containing 2.5."},
+    } }, /* 18 */
+    { {
+        {"Overload operators for clear meaning", "Operator overloading lets a custom C++ type support familiar expressions. Its behaviour should be intuitive; operators cannot gain new precedence or a different number of operands.", "struct Point {\n    int x,y;\n    Point operator+(Point rhs) const {\n        return {x+rhs.x,y+rhs.y};\n    }\n};", "Point{1,2}+Point{3,4} produces Point{4,6}. This is C++ code."},
+        {"Prefix versus postfix increment", "Prefix ++x changes x and usually returns the new value. Postfix x++ produces the old value and then changes x. A postfix overload has a dummy int parameter.", "int x=4;\nint before=x++;\nint after=++x;", "before is 4, after is 6 and x ends at 6. Custom types should generally preserve this familiar meaning."},
+    } }, /* 19 */
+    { {
+        {"A vector is a growing array", "std::vector stores its elements contiguously and manages capacity automatically. size() is the number of elements; push_back adds an element at the end.", "#include <vector>\nstd::vector<int> v{2,4};\nv.push_back(6);", "v contains 2, 4, 6 and v.size() is 3. Compile as C++."},
+        {"Iterators mark a range", "begin() points to the first element and end() marks one past the last element. Range-based loops provide a concise way to read elements. Never dereference end().", "for(int value : v)\n    std::cout << value << \" \";", "With v={2,4,6}, prints 2 4 6. Include <iostream> and <vector>."},
+    } }, /* 20 */
+    { {
+        {"How a list differs from a vector", "std::list is typically a doubly linked list. You can insert near a known iterator efficiently, but cannot use an integer index such as list[2].", "#include <list>\nstd::list<int> nums{2,4};\nnums.push_front(1);", "nums holds 1, 2, 4 in iteration order. This example requires C++."},
+        {"Splicing moves nodes", "list::splice transfers elements between lists without copying individual values. Iterator/reference validity is retained for transferred elements, now belonging to the destination.", "std::list<int> a{1,2}, b{8};\na.splice(a.end(),b);", "a becomes 1,2,8 and b becomes empty. Include <list>."},
+    } }, /* 21 */
+    { {
+        {"Map keys and values", "std::map associates unique ordered keys with values. operator[] can create a missing key, while find checks without adding anything.", "#include <map>\n#include <string>\nstd::map<std::string,int> scores;\nscores[\"Ada\"]=10;", "The key Ada maps to 10. scores.find(\"Bob\") equals scores.end() until Bob is added."},
+        {"Sets and container adapters", "std::set stores each key once. std::stack accesses the newest item first; std::queue accesses the oldest first. Their interfaces reflect different use cases.", "std::set<int> s{3,3,1};\nstd::queue<int> q; q.push(4); q.push(8);", "s holds 1 and 3; q.front() is 4. Include <set> and <queue>."},
+    } }, /* 22 */
+    { {
+        {"What Big-O measures", "Big-O describes how running work grows as input increases. An index lookup is O(1); scanning n items is O(n); a nested scan may be O(n squared).", "for(int i=0;i<n;++i)\n    for(int j=0;j<n;++j)\n        ++count;", "The body executes n*n times, illustrating quadratic growth. This is a loop fragment, not a complete program."},
+        {"Match algorithms to containers", "std::sort needs random-access iterators and works with vector, but not list iterators. std::list has its own sort member. Choose algorithms based on supported iterator operations.", "std::vector<int> v{3,1,2};\nstd::sort(v.begin(),v.end());", "v becomes 1,2,3. Include <vector> and <algorithm>; compile as C++."},
+    } }, /* 23 */
 };

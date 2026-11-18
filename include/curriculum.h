@@ -13,6 +13,8 @@ extern LessonDetail lessonDetails[24];
 typedef struct { const char *heading, *explanation, *example, *result; } TutorialSection;
 typedef struct { TutorialSection sections[2]; } TutorialChapter;
 extern const TutorialChapter tutorialChapters[24];
+extern const TutorialChapter coreTopics[24];
+extern const TutorialSection conditionsLoopTopics[6];
 extern const TutorialChapter extraChapters[24];
 extern Track tracks[5];
 extern Lesson lessons[24];

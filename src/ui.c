@@ -1023,108 +1023,261 @@ static void searchBox(float x,float y,float w){Rectangle r=RR(x,y,w,46);box(x,y,
  if(hit(r))searchActive=1;
  if(searchActive){int key=GetCharPressed();while(key){int n=(int)strlen(searchText);if(key>=32 && key<127 && n<90){searchText[n]=(char)key;searchText[n+1]=0;}key=GetCharPressed();}if(IsKeyPressed(KEY_BACKSPACE)&&strlen(searchText))searchText[strlen(searchText)-1]=0;if(IsKeyPressed(KEY_ENTER)||IsKeyPressed(KEY_ESCAPE))searchActive=0;}
 }
-static void learnList(float x,float w,float *bottom){float y=95;txH("Explore the curriculum",x,y,30,CQ_WHITE);tx("Short, focused chapters inspired by your lecture material.",x,y+43,15,CQ_MUTED);y+=89;
- searchBox(x,y,w);y+=68;
- if(btn("All topics",x,y,115,36,selectedTrack<0?CQ_PURPLE:CQ_LINE,selectedTrack<0))selectedTrack=-1;
- for(int t=0;t<COUNT(tracks);t++){float xx=x+126+t*128; if(xx+123>x+w)break; char label[29];snprintf(label,sizeof(label),"%s",t==0?"Foundations":t==1?"Pointers":t==2?"Linked lists":t==3?"C++": "STL");if(btn(label,xx,y,121,36,tracks[t].color,selectedTrack==t))selectedTrack=t;}
- y+=61;
- for(int t=0;t<COUNT(tracks);t++){if(selectedTrack>=0&&t!=selectedTrack)continue;int shown=0;for(int i=0;i<COUNT(lessons);i++)if(lessons[i].track==t&&contains(lessons[i].title,searchText))shown++;
-  if(!shown)continue;
-  char s[96];snprintf(s,sizeof(s),"%s  /  %d chapters",tracks[t].name,shown);tx(s,x,y,20,CQ_WHITE);y+=37;
-  for(int i=0;i<COUNT(lessons);i++){if(lessons[i].track!=t||!contains(lessons[i].title,searchText))continue;
-   box(x,y,w,86,.08f,PANEL);box(x+17,y+16,52,52,.15f,alpha(tracks[t].color,.18f));char id[12];snprintf(id,sizeof(id),"%02d",i+1);tx(id,x+29,y+31,17,tracks[t].color);
-   tx(lessons[i].title,x+86,y+15,19,CQ_WHITE);tx(lessons[i].tag,x+86,y+48,12,CQ_MUTED);if(progress.learned[i])pill("DONE",x+w-95,y+29,CQ_GREEN);else tx("Open  >",x+w-90,y+32,14,CQ_PURPLE);
-   if(hit(RR(x,y,w,86))){selectedLesson=i;scroll=0;}y+=99;
-  }y+=22;
- }*bottom=y;
+/* Study pages: compact curriculum index, generous reading rhythm and clear
+ * guidance. All chapter text stays in curriculum.c / lesson_details.c / tutorials.c. */
+static int lessonIndexInTrack(int id){
+ int n=0;for(int i=0;i<=id;i++)if(lessons[i].track==lessons[id].track)n++;
+ return n;
 }
-/* Stage 5: lessons use an editorial reading column with distinct code and
- * example treatments. Coordinates are still in the existing scroll camera. */
+static void learnList(float x,float w,float *bottom){
+ float y=95;
+ tx("LEARN  /  THE CURRICULUM",x,y,12,CQ_PURPLE);y+=29;
+ txH("Build your C skills",x,y,30,CQ_WHITE);y+=47;
+ tx("Choose a chapter, follow its examples, then practise what you learned.",x,y,15,CQ_MUTED);y+=43;
+ searchBox(x,y,w);y+=62;
+ /* Filter chips wrap instead of disappearing on smaller windows. */
+ float chipX=x,chipY=y;
+ const char *filters[]={"All chapters","Foundations","Pointers","Linked lists","C++","STL"};
+ for(int f=0;f<6;f++){
+  float cw=f==0?137.0f:(f==3?132.0f:112.0f);
+  if(chipX+cw>x+w){chipX=x;chipY+=45;}
+  Color accent=f==0?CQ_PURPLE:tracks[f-1].color;
+  if(btn(filters[f],chipX,chipY,cw,35,accent,selectedTrack==f-1)){
+   selectedTrack=f-1;scroll=0;
+  }
+  chipX+=cw+9;
+ }
+ y=chipY+60;
+ int matchingTotal=0;
+ for(int i=0;i<COUNT(lessons);i++)if((selectedTrack<0||lessons[i].track==selectedTrack)&&
+     (contains(lessons[i].title,searchText)||contains(lessons[i].tag,searchText)))matchingTotal++;
+ char summary[95];snprintf(summary,sizeof(summary),"%d chapter%s available",matchingTotal,matchingTotal==1?"":"s");
+ tx(summary,x,y,13,CQ_MUTED);y+=35;
+ for(int t=0;t<COUNT(tracks);t++){
+  if(selectedTrack>=0&&t!=selectedTrack)continue;
+  int shown=0,trackCount=trackLessonCount(t),done=trackDone(t);
+  for(int i=0;i<COUNT(lessons);i++)if(lessons[i].track==t&&
+     (contains(lessons[i].title,searchText)||contains(lessons[i].tag,searchText)))shown++;
+  if(!shown)continue;
+  Color c=tracks[t].color;
+  box(x,y,w,70,.10f,alpha(c,.065f));
+  box(x,y,3,70,.5f,c);
+  txH(tracks[t].name,x+19,y+11,20,CQ_WHITE);
+  tx(tracks[t].subtitle,x+20,y+40,13,CQ_MUTED);
+  char fraction[48];snprintf(fraction,sizeof(fraction),"%d / %d",done,trackCount);
+  tx(fraction,x+w-74,y+12,13,c);
+  bar(x+w-154,y+45,132,trackCount?(float)done/trackCount:0,c);
+  y+=83;
+  for(int i=0;i<COUNT(lessons);i++){
+   if(lessons[i].track!=t||
+      !(contains(lessons[i].title,searchText)||contains(lessons[i].tag,searchText)))continue;
+   int chapterNo=lessonIndexInTrack(i),complete=progress.learned[i]!=0;
+   float h=79;
+   Rectangle area=RR(x,y,w,h);
+   int hover=CheckCollisionPointRec(pointer(),clickRect(area));
+   box(x,y,w,h,.09f,hover?CARD:PANEL);
+   border(x,y,w,h,.09f,hover?alpha(c,.62f):alpha(CQ_LINE,.52f));
+   box(x+13,y+16,46,46,.18f,alpha(c,.13f));
+   char num[12];snprintf(num,sizeof(num),"%02d",chapterNo);
+   tx(num,x+25,y+30,16,c);
+   /* Limit titles before the right-hand status on narrow windows. */
+   char title[130];snprintf(title,sizeof(title),"%s",lessons[i].title);
+   while(strlen(title)>4&&tw(title,18)>w-235)title[strlen(title)-1]=0;
+   tx(title,x+73,y+13,18,CQ_WHITE);
+   tx(lessons[i].tag,x+74,y+45,12,CQ_MUTED);
+   if(complete){
+    if(w>=540)pill("LEARNED",x+w-115,y+26,CQ_GREEN);
+    else tx("OK",x+w-44,y+31,12,CQ_GREEN);
+   }else tx("Open  >",x+w-83,y+30,13,c);
+   if(hover)SetMouseCursor(MOUSE_CURSOR_POINTING_HAND);
+   if(hit(area)){selectedLesson=i;scroll=0;}
+   y+=89;
+  }
+  y+=17;
+ }
+ if(!matchingTotal){
+  box(x,y,w,96,.10f,PANEL);
+  tx("No matching chapters",x+18,y+20,18,CQ_WHITE);
+  tx("Try another search or select All chapters.",x+18,y+53,14,CQ_MUTED);
+  y+=115;
+ }
+ *bottom=y+40;
+}
 static float lessonSection(float x,float y,float w,const char *eyebrow,const char *title,Color accent){
- box(x,y,32,3,1,accent);
- tx(eyebrow,x,y+14,11,accent);
- txH(title,x,y+37,23,CQ_WHITE);
- return y+78;
+ (void)w;
+ box(x,y,29,3,1,accent);
+ tx(eyebrow,x,y+13,11,accent);
+ txH(title,x,y+35,23,CQ_WHITE);
+ return y+77;
+}
+/* Render the source's numbered teaching notes as separate, scan-friendly steps. */
+static float lessonSteps(const char *notes,float x,float y,float w,Color accent){
+ if(!notes||!*notes)return y;
+ const char *p=notes;int index=0;
+ while(*p){
+  const char *end=strchr(p,'\n');if(!end)end=p+strlen(p);
+  size_t n=(size_t)(end-p);if(n>510)n=510;
+  char line[512];memcpy(line,p,n);line[n]=0;
+  const char *body=line;
+  if(line[0]>='0'&&line[0]<='9'&&line[1]=='.'&&line[2]==' ')body=line+3;
+  float endY=paragraph(body,x+42,y+2,15,CQ_WHITE,w-56);
+  float h=fmaxf(38,endY-y+11);
+  box(x+3,y+3,24,24,.45f,alpha(accent,.14f));
+  char digit[8];snprintf(digit,sizeof(digit),"%d",++index);
+  tx(digit,x+10,y+7,12,accent);
+  y+=h+10;
+  p=*end?end+1:end;
+ }
+ return y;
 }
 static float lessonExample(float x,float y,float w,const TutorialSection *part,Color accent,int number){
- char label[36];snprintf(label,sizeof(label),"WALKTHROUGH  %02d",number);
- y=lessonSection(x,y,w,label,part->heading,accent);
- y=paragraph(part->explanation,x,y,16,CQ_MUTED,w-8)+21;
- y+=codePanel(part->example,x,y,w)+16;
- float end=paragraph(part->result,x+19,y+39,15,CQ_WHITE,w-43);
- float height=fmaxf(76,end-y+17);
- box(x,y,w,height,.09f,alpha(CQ_GREEN,.075f));
- box(x,y,3,height,.5f,CQ_GREEN);
- tx("EXPECTED OUTCOME",x+19,y+14,11,CQ_GREEN);
- paragraph(part->result,x+19,y+39,15,CQ_WHITE,w-43);
- return y+height+37;
+ char label[36];snprintf(label,sizeof(label),"EXAMPLE  %02d",number);
+ tx(label,x,y+2,11,accent);y+=25;
+ txH(part->heading,x,y,19,CQ_WHITE);y+=35;
+ y=paragraph(part->explanation,x,y,15,CQ_MUTED,w-8)+19;
+ y+=codePanel(part->example,x,y,w)+13;
+ float outcomeEnd=paragraph(part->result,x+17,y+32,14,CQ_WHITE,w-38);
+ float outcomeH=fmaxf(61,outcomeEnd-y+13);
+ box(x,y,w,outcomeH,.09f,alpha(CQ_GREEN,.07f));
+ box(x,y,3,outcomeH,.5f,CQ_GREEN);
+ tx("WHAT THIS SHOWS",x+17,y+10,11,CQ_GREEN);
+ paragraph(part->result,x+17,y+32,14,CQ_WHITE,w-38);
+ return y+outcomeH+33;
+}
+/* Bite-size concept sections used across the entire 24-chapter curriculum. */
+static float lessonCoreTopic(float x,float y,float w,const TutorialSection *topic,Color accent,int index,int total){
+ char label[48];snprintf(label,sizeof(label),"CONCEPT  %02d / %02d",index,total);
+ tx(label,x+2,y+3,11,accent);y+=28;
+ txH(topic->heading,x+2,y,21,CQ_WHITE);y+=38;
+ y=paragraph(topic->explanation,x+2,y,15,CQ_MUTED,w-12)+18;
+ tx("CODE WALKTHROUGH",x+2,y,11,accent);y+=24;
+ y+=codePanel(topic->example,x,y,w)+13;
+ float endY=paragraph(topic->result,x+17,y+35,14,CQ_WHITE,w-38);
+ float h=fmaxf(64,endY-y+18);
+ box(x,y,w,h,.085f,alpha(CQ_GREEN,.07f));
+ box(x,y,3,h,.5f,CQ_GREEN);
+ tx("WHAT TO NOTICE",x+17,y+12,11,CQ_GREEN);
+ paragraph(topic->result,x+17,y+35,14,CQ_WHITE,w-38);
+ y+=h+29;
+ if(index<total){box(x,y,w,1,.5f,alpha(CQ_LINE,.55f));y+=29;}
+ return y;
+}
+/* A focused set of independently titled concepts instead of one long mixed section. */
+static float conditionsLoopLesson(float x,float y,float w,Color accent){
+ y=lessonSection(x,y,w,"01  /  CONTROL FLOW","Decisions and repetition",accent);
+ y=paragraph("A condition decides whether code runs. A loop repeats code while its condition allows it. Study each construct below in order, then compare when to choose it.",x,y,16,CQ_MUTED,w-6)+20;
+ for(int i=0;i<6;i++){
+  char label[40];snprintf(label,sizeof(label),"TOPIC  %02d / 06",i+1);
+  tx(label,x,y+1,11,accent);y+=26;
+  const TutorialSection *part=&conditionsLoopTopics[i];
+  txH(part->heading,x,y,21,CQ_WHITE);y+=38;
+  y=paragraph(part->explanation,x,y,15,CQ_MUTED,w-8)+16;
+  y+=codePanel(part->example,x,y,w)+12;
+  float end=paragraph(part->result,x+16,y+32,14,CQ_WHITE,w-36);
+  float h=fmaxf(60,end-y+15);
+  box(x,y,w,h,.08f,alpha(CQ_GREEN,.075f));
+  box(x,y,3,h,.5f,CQ_GREEN);
+  tx("EXPECTED OUTPUT & WHY",x+16,y+10,11,CQ_GREEN);
+  paragraph(part->result,x+16,y+32,14,CQ_WHITE,w-36);
+  y+=h+25;
+  if(i<5){box(x,y,w,1,.5f,alpha(CQ_LINE,.65f));y+=27;}
+ }
+ y=lessonSection(x,y,w,"02  /  PUT IT TOGETHER","Combining conditions and loops",accent);
+ const TutorialChapter *chapter=&tutorialChapters[2];
+ y=lessonExample(x,y,w,&chapter->sections[0],accent,1);
+ y=lessonExample(x,y,w,&chapter->sections[1],accent,2);
+ y=lessonSection(x,y,w,"03  /  MORE PRACTICE","Explore further",accent);
+ const TutorialChapter *extra=&extraChapters[2];
+ for(int i=0;i<2;i++)y=lessonExample(x,y,w,&extra->sections[i],accent,i+3);
+ return y;
 }
 static void lessonView(float x,float w,float *bottom){
- Lesson*l=&lessons[selectedLesson];Color c=tracks[l->track].color;
- float rw=fminf(w,900.0f),rx=x+(w-rw)*.5f;
- float y=98;
- if(btn("<  All lessons",rx,y,166,38,CQ_PURPLE,0)){selectedLesson=-1;scroll=0;return;}
- int number=0,total=0;
- for(int i=0;i<COUNT(lessons);i++)if(lessons[i].track==l->track){total++;if(i<=selectedLesson)number++;}
- char position[80];snprintf(position,sizeof(position),"CHAPTER %02d  /  %02d",number,total);
- tx(position,rx+rw-150,y+13,12,CQ_MUTED);
- y+=63;
- box(rx,y,rw,177,.095f,PANEL);
- box(rx,y,4,177,.4f,c);
- tx("THE CODEQUEST HANDBOOK",rx+23,y+20,11,c);
- txH(l->title,rx+23,y+53,31,CQ_WHITE);
- pill(tracks[l->track].name,rx+23,y+119,c);
- if(progress.learned[selectedLesson])pill("COMPLETED",rx+195,y+119,CQ_GREEN);
- y+=205;
- y=paragraph(l->intro,rx+6,y,18,CQ_WHITE,rw-16)+37;
- box(rx,y,rw,1,.5f,alpha(CQ_LINE,.8f));y+=33;
- y=lessonSection(rx,y,rw,"01  /  THE CONCEPT","How it works",c);
- y=paragraph(l->explain,rx,y,17,CQ_MUTED,rw-9)+31;
+ Lesson *l=&lessons[selectedLesson];Color c=tracks[l->track].color;
+ float rw=fminf(w,820.0f),rx=x+(w-rw)*.5f;
+ float y=95;
+ if(btn("<  All chapters",rx,y,154,36,CQ_PURPLE,0)){
+  selectedLesson=-1;scroll=0;return;
+ }
+ int number=lessonIndexInTrack(selectedLesson),total=trackLessonCount(l->track);
+ char position[65];snprintf(position,sizeof(position),"%s  /  %02d OF %02d",tracks[l->track].name,number,total);
+ tx(position,rx+rw- fminf(rw-160,tw(position,12)+8),y+12,12,CQ_MUTED);
+ y+=57;
+ /* Open editorial header rather than a large empty banner. */
+ tx("CHAPTER GUIDE",rx,y,11,c);y+=27;
+ txH(l->title,rx,y,30,CQ_WHITE);y+=53;
+ pill(l->tag,rx,y,c);
+ if(progress.learned[selectedLesson])pill("COMPLETED",rx+tw(l->tag,11)+39,y,CQ_GREEN);
+ y+=45;
+ bar(rx,y,rw,total?(float)(number-1)/total:0,c);y+=25;
+ y=paragraph(l->intro,rx,y,17,CQ_WHITE,rw-5)+25;
+ box(rx,y,rw,1,.5f,alpha(CQ_LINE,.75f));y+=30;
  const LessonDetail *d=&lessonDetails[selectedLesson];
- if(d->concept){
-  box(rx,y,3,25,.5f,c);
-  tx("STEP BY STEP",rx+16,y+3,12,c);y+=41;
-  y=paragraph(d->concept,rx+16,y,16,CQ_WHITE,rw-35)+30;
+ if(selectedLesson==2){
+  y=conditionsLoopLesson(rx,y,rw,c);
+ }else{
+  y=lessonSection(rx,y,rw,"01  /  LEARN THE IDEA","The essential concept",c);
+  y=paragraph(l->explain,rx,y,16,CQ_MUTED,rw-6)+25;
+  if(d->concept&&*d->concept){
+   tx("BREAK IT DOWN",rx,y,11,c);y+=29;
+   y=lessonSteps(d->concept,rx,y,rw,c)+17;
+  }
+  tx("QUICK REFERENCE",rx,y,11,c);y+=25;
+  y+=codePanel(l->code,rx,y,rw)+31;
+  y=lessonSection(rx,y,rw,"02  /  CORE TOPICS","Learn it step by step",c);
+  y=paragraph("Start with these individual ideas. Read the example, predict what it does, then check the explanation before moving on.",rx,y,15,CQ_MUTED,rw-8)+25;
+  const TutorialChapter *core=&coreTopics[selectedLesson];
+  for(int i=0;i<2;i++)y=lessonCoreTopic(rx,y,rw,&core->sections[i],c,i+1,2);
+  const TutorialChapter *chapter=&tutorialChapters[selectedLesson];
+  y=lessonSection(rx,y,rw,"03  /  WORKED EXAMPLES","Put the ideas to work",c);
+  for(int i=0;i<2;i++)y=lessonExample(rx,y,rw,&chapter->sections[i],c,i+1);
+  const TutorialChapter *extra=&extraChapters[selectedLesson];
+  y=lessonSection(rx,y,rw,"04  /  GO FURTHER","Build your understanding",c);
+  for(int i=0;i<2;i++)y=lessonExample(rx,y,rw,&extra->sections[i],c,i+3);
  }
- tx("REFERENCE EXAMPLE",rx,y,12,c);y+=28;
- y+=codePanel(l->code,rx,y,rw)+43;
- const TutorialChapter *chapter=&tutorialChapters[selectedLesson];
- y=lessonSection(rx,y,rw,"02  /  PRACTICAL GUIDE","See it in action",c);
- for(int i=0;i<2;i++)y=lessonExample(rx,y,rw,&chapter->sections[i],c,i+1);
- const TutorialChapter *extra=&extraChapters[selectedLesson];
- y=lessonSection(rx,y,rw,"03  /  DEEPEN YOUR SKILLS","More examples & exam practice",c);
- for(int i=0;i<2;i++)y=lessonExample(rx,y,rw,&extra->sections[i],c,i+3);
- if(d->mistakes){
-  y=lessonSection(rx,y,rw,"04  /  CHECK YOUR UNDERSTANDING","Common mistakes",CQ_ORANGE);
-  y=paragraph(d->mistakes,rx,y,16,CQ_MUTED,rw-9)+34;
-  txH("Try it yourself",rx,y,22,CQ_WHITE);y+=40;
-  y=paragraph(d->practice,rx,y,16,CQ_WHITE,rw-9)+39;
+ if(d->mistakes&&*d->mistakes){
+  y=lessonSection(rx,y,rw,"05  /  CHECK YOUR UNDERSTANDING","Watch out for",CQ_ORANGE);
+  box(rx,y,3,42,.5f,CQ_ORANGE);
+  y=paragraph(d->mistakes,rx+18,y+3,15,CQ_MUTED,rw-24)+27;
+  txH("Try it yourself",rx,y,21,CQ_WHITE);y+=39;
+  y=paragraph(d->practice,rx,y,16,CQ_WHITE,rw-8)+29;
  }
- float tipEnd=paragraph(l->tip,rx+22,y+47,15,CQ_WHITE,rw-49);
- float tipH=fmaxf(110,tipEnd-y+24);
- box(rx,y,rw,tipH,.095f,alpha(c,.10f));
- border(rx,y,rw,tipH,.095f,alpha(c,.26f));
- tx("KEEP IN MIND",rx+22,y+17,12,c);
- paragraph(l->tip,rx+22,y+47,15,CQ_WHITE,rw-49);
- y+=tipH+32;
- box(rx,y,rw,1,.5f,CQ_LINE);y+=25;
+ float reminderEnd=paragraph(l->tip,rx+18,y+38,15,CQ_WHITE,rw-40);
+ float reminderH=fmaxf(88,reminderEnd-y+17);
+ box(rx,y,rw,reminderH,.10f,alpha(c,.085f));
+ border(rx,y,rw,reminderH,.10f,alpha(c,.25f));
+ tx("KEY TAKEAWAY",rx+18,y+12,11,c);
+ paragraph(l->tip,rx+18,y+38,15,CQ_WHITE,rw-40);
+ y+=reminderH+29;
+ box(rx,y,rw,1,.5f,CQ_LINE);y+=26;
  if(progress.learned[selectedLesson])pill("CHAPTER COMPLETED  +30 XP",rx,y,CQ_GREEN);
- else if(btn("Mark as learned   +30 XP",rx,y,247,46,CQ_GREEN,1)){
+ else if(btn("Mark as learned  +30 XP",rx,y,229,40,CQ_GREEN,1)){
   progress.learned[selectedLesson]=1;award(CQ_XP_LESSON);checkTrackRewards();
  }
- y+=59;
+ y+=57;
  int next=-1;
  for(int i=selectedLesson+1;i<COUNT(lessons);i++)if(lessons[i].track==l->track){next=i;break;}
- if(next<0){for(int i=selectedLesson+1;i<COUNT(lessons);i++){next=i;break;}}
+ if(next<0)for(int i=selectedLesson+1;i<COUNT(lessons);i++){next=i;break;}
+ /* Compact primary action. Keep the chapter title as a separate, readable cue. */
  if(next>=0){
-  char nextLabel[140];snprintf(nextLabel,sizeof(nextLabel),"Next lesson: %s  >",lessons[next].title);
-  /* Avoid clipping long chapter titles in the button. */
-  if(tw(nextLabel,15)>rw-35)snprintf(nextLabel,sizeof(nextLabel),"Next lesson  >");
-  if(btn(nextLabel,rx,y,rw,48,c,1)){selectedLesson=next;scroll=0;return;}
-  y+=61;
+  tx("UP NEXT",rx,y,11,CQ_MUTED);y+=25;
+  tx(lessons[next].title,rx,y,16,CQ_WHITE);y+=34;
+  if(btn("Next lesson  >",rx,y,157,40,c,1)){
+   selectedLesson=next;scroll=0;return;
+  }
+  if(rw>=490&&btn("Practise this topic",rx+170,y,188,40,CQ_PURPLE,0)){
+   startQuiz(l->track);return;
+  }
+  y+=55;
+  if(rw<490&&btn("Practise this topic",rx,y,188,40,CQ_PURPLE,0)){
+   startQuiz(l->track);return;
+  }
+ }else{
+  if(btn("Practise this topic",rx,y,188,40,CQ_PURPLE,0)){
+   startQuiz(l->track);return;
+  }
+  y+=54;
  }
- if(btn("Practise this topic  >",rx,y,231,44,CQ_PURPLE,0)){startQuiz(l->track);return;}
- *bottom=y+95;
+ *bottom=y+66;
 }
 /* Topic-based quiz menu: one assessment per learning track. */
 static void quizMenu(float x,float w,float *bottom){

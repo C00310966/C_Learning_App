@@ -283,7 +283,7 @@ The Stage 6 side-by-side workspace experiment was reverted in `src/ui.c` in favo
 
 ## Daily challenges and XP streak (November 2026)
 
-The Home screen has a compact **Daily Challenge card** linking to a dedicated challenge screen, featuring a rotating selection of quick quizzes, code-output predictions and bug-finding questions. On the dedicated screen, choose an answer and press **Check answer**. Wrong answers can be retried; correct completion earns **25 XP once per local calendar day**, plus a **5 XP bonus per consecutive daily-challenge day**, capped at **25 bonus XP** (maximum 50 XP/day). A day without a completed challenge resets this *daily-challenge* streak; regular study activity does not count towards it. The home card displays the current streak and possible reward.
+The Home screen has a compact **Daily Challenge card** linking to a dedicated challenge screen, featuring a rotating selection of quick quizzes, code-output predictions and bug-finding questions. On the dedicated screen, choose an answer and press **Check answer**. Daily challenges allow one submitted answer (a wrong answer locks that day); correct completion earns **25 XP once per local calendar day**, plus a **5 XP bonus per consecutive daily-challenge day**, capped at **25 bonus XP** (maximum 50 XP/day). A day without a completed challenge resets this *daily-challenge* streak; regular study activity does not count towards it. The home card displays the current streak and possible reward.
 
 Daily progress is saved in the existing `codequest_progress.dat` file. The save format is upgraded to **CQ5**, with automatic loading of CQ2, CQ3 and CQ4 files. Keep a backup of the old save if you intend to run an older CodeQuest version again, as older builds cannot read CQ5. Challenges use the computer's local date, so clock changes may affect daily rotation.
 
@@ -294,3 +294,24 @@ The Home screen now shows a compact Daily Challenge card with the active consecu
 ### Daily challenge single-attempt rule
 
 Today’s challenge permits only one submitted answer. Correct submissions grant the daily XP reward and extend the streak; incorrect submissions award no XP and cannot be retried that day, including after restarting CodeQuest. Previous challenges remain available for practice without XP. The CQ6 save format migrates CQ5 and earlier saves.
+
+## Learn section — chapter layout refinement (November 2026)
+
+- Chapter index: track progress summaries, compact clickable chapter rows, chapter numbers within each track, search by title or topic tag, and wrapping track filters.
+- Chapter reading: slimmer editorial headers, structured numbered study notes, clearly separated reference code, two worked examples, two additional examples, pitfalls, practice prompts, and a key takeaway. Existing curriculum text and XP rules are preserved.
+- Navigation: the Next lesson action is now a normal 157 x 40 button, with the upcoming lesson title displayed separately. The topic quiz remains accessible.
+- No new dependencies or markdown files.
+
+## Teaching material — Conditions & loops chapter (November 2026)
+
+- The Conditions & loops chapter now teaches `if`, `else if`, `else`, `for`, `while`, and `do while` as six individually titled topics, each with a full C example and a short expected-output walkthrough.
+- The chapter then covers combined control flow, nested loops, additional practice, and common mistakes. Other chapters retain their existing lesson flow.
+- The data lives in `src/tutorials.c`, and the special-topic reading layout lives in `src/ui.c`, using existing Raylib drawing helpers. No new Markdown files or dependencies were added.
+
+## Expanded teaching material — all 24 chapters (November 2026)
+
+Every chapter now introduces the ideas separately rather than relying on a dense introductory paragraph. The Conditions & loops chapter retains its six dedicated explanations of `if`, `else if`, `else`, `for`, `while` and `do while`; the other 23 chapters now have two new focused **Core Topics**, with an explanation, a short code walkthrough and a "What to notice" panel for each. That's **46 additional topic sections**, followed by the existing four longer worked examples, common mistakes and practice prompts in each chapter.
+
+The content covers program structure, types and expressions, functions, arrays, pointers, memory ownership, linked lists, C++ classes and templates, and STL containers and algorithms. Code listings are **focused teaching excerpts** unless they contain a complete `main` program; snippets that use names such as `head`, `node`, `v` or `n` build on the surrounding explanation and are not intended to compile independently. C++ examples require a C++ compiler rather than the C11 compiler used for the CodeQuest application.
+
+Teaching data is maintained in `src/tutorials.c` (`coreTopics`) and displayed by `src/ui.c` using the existing chapter reader. The 24-chapter IDs, save formats, completion logic, quizzes, coding labs and XP calculations are unchanged. No additional Markdown files or dependencies were introduced.
